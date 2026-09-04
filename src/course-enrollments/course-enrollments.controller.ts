@@ -25,7 +25,7 @@ export class CourseEnrollmentsController {
   @ApiResponse({ status: 409, description: 'Ya estás inscripto en este curso' })
   create(
     @Body() createCourseEnrollmentDto: CreateCourseEnrollmentDto,
-    @CurrentUser('sub') studentId: string,
+    @CurrentUser('id') studentId: string,
   ) {
     return this.courseEnrollmentsService.create(createCourseEnrollmentDto, studentId);
   }
@@ -38,7 +38,7 @@ export class CourseEnrollmentsController {
 
   @Get('me')
   @ApiOperation({ summary: 'Listar mis inscripciones' })
-  findMine(@CurrentUser('sub') studentId: string) {
+  findMine(@CurrentUser('id') studentId: string) {
     return this.courseEnrollmentsService.findAllByStudent(studentId);
   }
 

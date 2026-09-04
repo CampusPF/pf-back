@@ -26,7 +26,7 @@ export class RegisterDto {
 
     @ApiProperty({
         description: 'Correo electrónico válido del usuario',
-        example: 'maria.gonzalez@empresa.com',
+        example: 'maria.gonzalez@campuslite.com',
         format: 'email',
         maxLength: 255,
         required: true,

@@ -12,6 +12,7 @@ import { LessonProgressModule } from './lesson-progress/lesson-progress.module';
 import { CourseEnrollmentsModule } from './course-enrollments/course-enrollments.module';
 import { AuthModule } from './auth/auth.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { AiTutorModule } from './aiTutor/aiTutor.module';
 
 
 
@@ -44,6 +45,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     LessonProgressModule,
     AuthModule,
     SubscriptionsModule,
+    AiTutorModule
   ],
   controllers: [AppController],
   providers: [AppService],

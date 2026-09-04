@@ -31,6 +31,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   findAll() {
+    console.log(this.usersService.findAll());
     return this.usersService.findAll();
   }
 
