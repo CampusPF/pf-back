@@ -44,7 +44,7 @@ export class CreateCourseDto {
     imageUrl?: string;
 
     @ApiProperty({
-        example: 'b3f1c2a0-1234-4a5b-9abc-1234567890ab',
+        example: '8a01e21a-a392-4e93-bf76-8d1f4a4ef650',
         description: 'ID de la categoría a la que pertenece el curso',
     })
     @IsUUID()
