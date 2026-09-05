@@ -19,7 +19,7 @@ export class CreateLessonDto {
     title: string;
 
     @ApiProperty({
-        example: 'b3f1c2a0-1234-4a5b-9abc-1234567890ab',
+        example: '497199a9-0881-40b5-a11c-30a4b61cc6b3',
         description: 'ID del módulo al que pertenece la lección',
     })
     @IsUUID()

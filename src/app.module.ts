@@ -1,4 +1,3 @@
-import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
@@ -13,6 +12,8 @@ import { CourseEnrollmentsModule } from './course-enrollments/course-enrollments
 import { AuthModule } from './auth/auth.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { AiTutorModule } from './aiTutor/aiTutor.module';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 
 
 
@@ -50,4 +51,8 @@ import { AiTutorModule } from './aiTutor/aiTutor.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestLoggerMiddleware).forRoutes('*');
+  }
+}
