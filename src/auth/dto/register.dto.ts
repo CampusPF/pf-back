@@ -9,7 +9,7 @@ import {
     IsOptional,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Match } from '../decorators/Match.decorator';
+import { Match } from '../decorators/match.decorator';
 
 export class RegisterDto {
     @ApiProperty({
