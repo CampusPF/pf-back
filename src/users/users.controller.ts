@@ -10,19 +10,24 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
+
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+
 import { UserRole } from './entities/user.entity';
+
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
+
   constructor(private readonly usersService: UsersService) { }
 
   @Post()
@@ -36,14 +41,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   findAll() {
-    console.log(this.usersService.findAll());
     return this.usersService.findAll();
-  }
-
-  @Get('me')
-  @UseGuards(JwtAuthGuard)
-  getMe(@Req() req: Request & { user: { id: string; email: string; role: string } }) {
-    return this.usersService.findOne(req.user.id);
   }
 
   @Get(':id')
@@ -54,7 +52,10 @@ export class UsersController {
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
     return this.usersService.update(id, updateUserDto);
   }
 
