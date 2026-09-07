@@ -12,7 +12,15 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { LessonsService } from './lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
+/**
+ * Antes este controller no tenía ningún guard: cualquiera, sin token, podía
+ * crear, editar o borrar lecciones. Ahora escribir es solo ADMIN, y leer
+ * exige estar logueado (por el JwtAuthGuard global) — decisión de producto:
+ * el contenido de las lecciones solo se ve con sesión iniciada.
+ */
 @ApiTags('lessons')
 @Controller('lessons')
 export class LessonsController {
@@ -20,6 +28,7 @@ export class LessonsController {
 
   @Post()
   @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Crear una lección dentro de un módulo' })
   @ApiResponse({ status: 201, description: 'Lección creada correctamente' })
   @ApiResponse({ status: 404, description: 'Módulo no encontrado' })
@@ -45,6 +54,7 @@ export class LessonsController {
 
   @Patch(':id')
   @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Actualizar una lección' })
   update(@Param('id') id: string, @Body() dto: UpdateLessonDto) {
     return this.lessonsService.update(id, dto);
@@ -52,6 +62,7 @@ export class LessonsController {
 
   @Delete(':id')
   @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Eliminar una lección' })
   remove(@Param('id') id: string) {
     return this.lessonsService.remove(id);

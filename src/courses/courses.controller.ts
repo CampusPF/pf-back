@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { UserRole } from '../users/entities/user.entity';
 
 @ApiTags('courses')
@@ -37,13 +38,18 @@ export class CoursesController {
     return this.coursesService.create(createCourseDto, instructorId);
   }
 
+  // El catálogo de cursos es la vitrina del sitio: el front lo muestra sin
+  // login, así que se marca @Public() de forma explícita ahora que el
+  // JwtAuthGuard es global.
   @Get()
+  @Public()
   @ApiOperation({ summary: 'Obtener todos los cursos' })
   findAll() {
     return this.coursesService.findAll();
   }
 
   @Get(':id')
+  @Public()
   @ApiOperation({ summary: 'Obtener un curso por ID' })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   findOne(@Param('id') id: string) {

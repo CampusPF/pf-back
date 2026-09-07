@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { LessonProgress } from './entities/lesson-progress.entity';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
+import { UserRole } from '../users/entities/user.entity';
 import { CreateLessonProgressDto } from './dto/create-lesson-progress.dto';
 import { UpdateLessonProgressDto } from './dto/update-lesson-progress.dto';
 
@@ -76,6 +77,17 @@ export class LessonProgressService {
     });
   }
 
+  /**
+   * Todo el progreso del usuario del token, en todas sus inscripciones.
+   * Se filtra por el id del JWT, no por ningún id que mande el cliente.
+   */
+  async findAllByUser(userId: string): Promise<LessonProgress[]> {
+    return this.lessonProgressRepository.find({
+      where: { enrollment: { student: { id: userId } } },
+      relations: { lesson: true, enrollment: { course: true } },
+    });
+  }
+
   async findOne(id: string): Promise<LessonProgress> {
     const progress = await this.lessonProgressRepository.findOne({
       where: { id },
@@ -89,9 +101,24 @@ export class LessonProgressService {
     return progress;
   }
 
+  /**
+   * Lectura con control de titularidad: un alumno solo puede leer SU progreso.
+   * Un ADMIN puede leer el de cualquiera (operación de administración).
+   */
+  async findOneForUser(
+    id: string,
+    user: { id: string; role: UserRole },
+  ): Promise<LessonProgress> {
+    const progress = await this.findOne(id);
+    this.assertOwnerOrAdmin(progress, user);
+    return progress;
+  }
+
   async update(id: string, dto: UpdateLessonProgressDto, userId: string): Promise<LessonProgress> {
     const progress = await this.findOne(id);
 
+    // Editar progreso es siempre del dueño, ni siquiera el admin lo hace por
+    // el alumno: no hay caso de negocio para eso.
     if (progress.enrollment.student.id !== userId) {
       throw new ForbiddenException('Esta inscripción no te pertenece');
     }
@@ -106,8 +133,23 @@ export class LessonProgressService {
     return this.lessonProgressRepository.save(progress);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, user: { id: string; role: UserRole }): Promise<void> {
     const progress = await this.findOne(id);
+    this.assertOwnerOrAdmin(progress, user);
     await this.lessonProgressRepository.remove(progress);
+  }
+
+  /**
+   * Titularidad del recurso: el progreso pertenece al alumno de la inscripción.
+   * El rol de ADMIN es la única excepción, y es deliberada.
+   */
+  private assertOwnerOrAdmin(
+    progress: LessonProgress,
+    user: { id: string; role: UserRole },
+  ): void {
+    if (user?.role === UserRole.ADMIN) return;
+    if (progress.enrollment?.student?.id !== user?.id) {
+      throw new ForbiddenException('Este registro de progreso no te pertenece');
+    }
   }
 }
