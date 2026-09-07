@@ -39,6 +39,13 @@ export class CreateCourseDto {
         example: 'https://cdn.campuslite.com/covers/curso-nestjs.png',
         description: 'URL de la imagen de portada',
     })
+    // TODO(seguridad): hoy la portada llega como URL ya subida en otro lado.
+    // No hay ningún endpoint de upload en esta API. Si se agrega uno (p. ej.
+    // Cloudinary), tiene que: validar mimetype y tamaño con el fileFilter y
+    // limits.fileSize de Multer ANTES de subir (rechazar con 400 lo que no
+    // sea imagen), firmar la subida en el backend con el api_secret leído de
+    // env (nada de upload presets unsigned) y no devolver nunca el api_secret
+    // al front.
     @IsOptional()
     @IsUrl()
     imageUrl?: string;

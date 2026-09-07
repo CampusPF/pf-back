@@ -34,8 +34,13 @@ export class User {
     @Column({ unique: true })
     email: string;
 
-    @Column({ type: 'varchar', nullable: true })
-    @Exclude() // evita que el password se serialice en las respuestas
+    // Doble protección sobre el hash de la contraseña:
+    //  - select:false → TypeORM no lo trae de la base salvo que se pida
+    //    explícitamente (solo lo hace findByEmail, para el login).
+    //  - @Exclude()   → aunque estuviera cargado, no se serializa en la
+    //    respuesta HTTP (ClassSerializerInterceptor, global en main.ts).
+    @Column({ type: 'varchar', nullable: true, select: false })
+    @Exclude()
     passwordHash: string | null;
 
     @Column({ type: 'varchar', unique: true, nullable: true })

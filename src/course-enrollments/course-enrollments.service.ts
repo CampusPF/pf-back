@@ -2,12 +2,13 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CourseEnrollment } from './entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { CreateCourseEnrollmentDto } from './dto/create-course-enrollment.dto';
 import { UpdateCourseEnrollmentDto } from './dto/update-course-enrollment.dto';
 
@@ -76,8 +77,26 @@ export class CourseEnrollmentsService {
     return enrollment;
   }
 
-  async update(id: string, dto: UpdateCourseEnrollmentDto): Promise<CourseEnrollment> {
+  /**
+   * Lectura con control de titularidad: un alumno solo puede leer SU
+   * inscripción. Un ADMIN puede leer cualquiera (operación de administración).
+   */
+  async findOneForUser(
+    id: string,
+    user: { id: string; role: UserRole },
+  ): Promise<CourseEnrollment> {
     const enrollment = await this.findOne(id);
+    this.assertOwnerOrAdmin(enrollment, user);
+    return enrollment;
+  }
+
+  async update(
+    id: string,
+    dto: UpdateCourseEnrollmentDto,
+    user: { id: string; role: UserRole },
+  ): Promise<CourseEnrollment> {
+    const enrollment = await this.findOne(id);
+    this.assertOwnerOrAdmin(enrollment, user);
 
     Object.assign(enrollment, {
       progressPercent: dto.progressPercent ?? enrollment.progressPercent,
@@ -87,8 +106,26 @@ export class CourseEnrollmentsService {
     return this.enrollmentsRepository.save(enrollment);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(
+    id: string,
+    user: { id: string; role: UserRole },
+  ): Promise<void> {
     const enrollment = await this.findOne(id);
+    this.assertOwnerOrAdmin(enrollment, user);
     await this.enrollmentsRepository.remove(enrollment);
+  }
+
+  /**
+   * Titularidad del recurso: la inscripción pertenece a su alumno.
+   * El rol de ADMIN es la única excepción, y es deliberada.
+   */
+  private assertOwnerOrAdmin(
+    enrollment: CourseEnrollment,
+    user: { id: string; role: UserRole },
+  ): void {
+    if (user?.role === UserRole.ADMIN) return;
+    if (enrollment.student?.id !== user?.id) {
+      throw new ForbiddenException('Esta inscripción no te pertenece');
+    }
   }
 }

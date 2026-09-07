@@ -34,22 +34,27 @@ export class MockAiProvider implements AiProvider {
 
 import Anthropic from '@anthropic-ai/sdk';
 import { ConfigService } from '@nestjs/config';
+import { buildTutorSystemPrompt, AI_MAX_OUTPUT_TOKENS } from './ai-provider.interface';
 
 @Injectable()
 export class AnthropicProvider implements AiProvider {
   private client: Anthropic;
 
   constructor(config: ConfigService) {
+    // La API key sale de env y jamás se loguea ni se devuelve al front.
     this.client = new Anthropic({ apiKey: config.getOrThrow('ANTHROPIC_API_KEY') });
   }
 
   async generateReply(history: AiChatMessage[], lessonContext?: string): Promise<string> {
     const response = await this.client.messages.create({
+      // TODO(seguridad): fijar el modelo definitivo al elegir proveedor.
       model: 'claude-sonnet-4-5',
-      max_tokens: 1000,
-      system: lessonContext
-        ? `Sos un tutor educativo. Contexto de la lección: ${lessonContext}`
-        : 'Sos un tutor educativo.',
+      // Tope de salida: sin esto una sola conversación puede costar mucho.
+      max_tokens: AI_MAX_OUTPUT_TOKENS,
+      // Las reglas del tutor van en `system`, separadas del input del alumno.
+      system: buildTutorSystemPrompt(lessonContext),
+      // El texto del alumno va siempre acá, como role:'user'. Nunca dentro
+      // del system prompt (eso sería prompt injection servida en bandeja).
       messages: history.map((m) => ({ role: m.role, content: m.content })),
     });
 
@@ -64,25 +69,29 @@ export class AnthropicProvider implements AiProvider {
 
 import OpenAI from 'openai';
 import { ConfigService } from '@nestjs/config';
+import { buildTutorSystemPrompt, AI_MAX_OUTPUT_TOKENS } from './ai-provider.interface';
 
 @Injectable()
 export class OpenAiProvider implements AiProvider {
   private client: OpenAI;
 
   constructor(config: ConfigService) {
+    // La API key sale de env y jamás se loguea ni se devuelve al front.
     this.client = new OpenAI({ apiKey: config.getOrThrow('OPENAI_API_KEY') });
   }
 
   async generateReply(history: AiChatMessage[], lessonContext?: string): Promise<string> {
     const response = await this.client.chat.completions.create({
+      // TODO(seguridad): fijar el modelo definitivo al elegir proveedor.
       model: 'gpt-4o-mini',
+      // Tope de salida: sin esto una sola conversación puede costar mucho.
+      max_tokens: AI_MAX_OUTPUT_TOKENS,
       messages: [
-        {
-          role: 'system',
-          content: lessonContext
-            ? `Sos un tutor educativo. Contexto de la lección: ${lessonContext}`
-            : 'Sos un tutor educativo.',
-        },
+        // Las reglas del tutor van en el mensaje `system`, separadas del
+        // input del alumno.
+        { role: 'system', content: buildTutorSystemPrompt(lessonContext) },
+        // El texto del alumno va siempre acá, como role:'user'. Nunca dentro
+        // del system prompt (eso sería prompt injection servida en bandeja).
         ...history.map((m) => ({ role: m.role, content: m.content })),
       ],
     });

@@ -6,6 +6,13 @@ import { User, UserRole, UserStatus } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
+/**
+ * Costo de bcrypt. 12 es el mínimo razonable hoy: cada +1 duplica el tiempo
+ * de cómputo, lo que encarece un ataque de diccionario sobre la base filtrada.
+ * No bajarlo por "performance del login": son milisegundos una vez por login.
+ */
+const BCRYPT_SALT_ROUNDS = 12;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -14,7 +21,7 @@ export class UsersService {
   ) { }
 
   async create(dto: CreateUserDto): Promise<User> {
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
     const user = this.usersRepository.create({
       name: dto.name,
       email: dto.email,
@@ -24,6 +31,13 @@ export class UsersService {
     });
     return this.usersRepository.save(user);
   }
+
+  async findById(id: string) {
+    return this.usersRepository.findOne({
+      where: { id },
+    });
+  }
+
 
   async findAll(): Promise<User[]> {
     return this.usersRepository.find({
@@ -55,8 +69,21 @@ export class UsersService {
   }
 
   findByEmail(email: string): Promise<User | null> {
-    // acá SÍ incluimos passwordHash, porque login lo necesita para comparar
-    return this.usersRepository.findOne({ where: { email } });
+    // Único lugar que pide passwordHash explícitamente (la columna es
+    // select:false en la entidad): el login lo necesita para el bcrypt.compare.
+    // El objeto que devuelve NO debe salir tal cual en una respuesta HTTP.
+    return this.usersRepository.findOne({
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        status: true,
+        passwordHash: true,
+        googleId: true,
+      },
+    });
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
