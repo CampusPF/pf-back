@@ -10,6 +10,7 @@ import {
     Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -24,9 +25,15 @@ const AUTH_THROTTLE_LIMIT = () => Number(process.env.THROTTLE_AUTH_LIMIT ?? 10);
 const AUTH_THROTTLE_TTL_MS = () =>
     Number(process.env.THROTTLE_TTL ?? 60) * 1000;
 
+/** Nombre de la cookie que lee el middleware/proxy del front. */
+const AUTH_COOKIE_NAME = 'campus.token';
+
 @Controller('auth')
 export class AuthController {
-    constructor(private readonly authService: AuthService) { }
+    constructor(
+        private readonly authService: AuthService,
+        private readonly config: ConfigService,
+    ) { }
 
     // Rate limit estricto: son los dos endpoints donde se prueban credenciales.
     // Sin JWT todavía, el UserOrIpThrottlerGuard cuenta por IP, que es lo que
@@ -36,8 +43,13 @@ export class AuthController {
     @Throttle({
         default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
     })
-    register(@Body() dto: RegisterDto) {
-        return this.authService.register(dto);
+    async register(
+        @Body() dto: RegisterDto,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        const result = await this.authService.register(dto);
+        this.setAuthCookie(res, result.access_token);
+        return result; // passthrough:true → Nest sigue mandando esto como body JSON
     }
 
     @Public()
@@ -46,14 +58,23 @@ export class AuthController {
     @Throttle({
         default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
     })
-    login(@Body() dto: LoginDto) {
-        return this.authService.login(dto);
+    async login(
+        @Body() dto: LoginDto,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        const result = await this.authService.login(dto);
+        this.setAuthCookie(res, result.access_token);
+        return result;
     }
 
     @Post('logout')
     @HttpCode(HttpStatus.OK)
     @UseGuards(JwtAuthGuard)
-    logout() {
+    logout(@Res({ passthrough: true }) res: Response) {
+        // Complemento necesario de setAuthCookie: si seteamos la cookie en
+        // login/register, logout tiene que borrarla, si no queda viva hasta
+        // que expire sola aunque el cliente ya "cerró sesión".
+        res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
         return { message: 'Sesión cerrada. Eliminá el token del lado del cliente.' };
     }
 
@@ -69,8 +90,43 @@ export class AuthController {
     @UseGuards(GoogleAuthGuard)
     async googleAuthCallback(@Req() req: any, @Res() res: Response) {
         const result = await this.authService.loginWithGoogle(req.user);
+        this.setAuthCookie(res, result.access_token);
 
-         const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
-         return res.redirect(`${frontendUrl}/auth/callback?token=${result.access_token}`);
+        // FRONTEND_URL puede traer varios orígenes separados por coma (ver
+        // main.ts / CORS); para un redirect necesitamos UNO solo, así que
+        // usamos el primero de la lista.
+        const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000')
+            .split(',')[0]
+            .trim();
+
+        // TODO(seguridad): una vez que el front confirme que su middleware
+        // ya lee la cookie `campus.token` y no necesita más el token en la
+        // URL, sacar el query param de acá — hoy queda como fallback porque
+        // no tenemos esa confirmación. El query param en la URL es visible
+        // en el historial del navegador y en logs, la cookie httpOnly no.
+        return res.redirect(`${frontendUrl}/auth/callback?token=${result.access_token}`);
+    }
+
+    /**
+     * Setea el JWT como cookie httpOnly, además de devolverlo en el body
+     * (que el front hoy sigue leyendo directo — esto suma, no reemplaza).
+     *
+     * httpOnly: JS del front no puede leerla (mitiga robo por XSS).
+     * secure: solo viaja por HTTPS en producción (en dev, sin HTTPS local,
+     *   el navegador la descartaría si fuera true).
+     * sameSite 'lax': la manda en navegación normal (ej. el redirect de
+     *   Google) pero no en requests cross-site de terceros.
+     */
+    private setAuthCookie(res: Response, token: string): void {
+        const isProduction = this.config.get<string>('NODE_ENV') === 'production';
+        const expiresInSeconds = Number(this.config.get('JWT_EXPIRES_IN') ?? 3600);
+
+        res.cookie(AUTH_COOKIE_NAME, token, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: 'lax',
+            path: '/',
+            maxAge: expiresInSeconds * 1000,
+        });
     }
 }

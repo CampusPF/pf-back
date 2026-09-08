@@ -1,5 +1,7 @@
 import { IsEmail, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { normalizeEmail } from '../../common/utils/normalize-email.util';
 
 export class LoginDto {
     @ApiProperty({
@@ -8,6 +10,9 @@ export class LoginDto {
         format: 'email',
         maxLength: 255,
     })
+    // Normaliza ANTES de validar/usar: así "Usuario@Gmail.com" y
+    // "usuario@gmail.com " (con espacio) resuelven al mismo usuario.
+    @Transform(({ value }) => (typeof value === 'string' ? normalizeEmail(value) : value))
     @IsEmail()
     email: string;
 

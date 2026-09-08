@@ -1,6 +1,8 @@
 import { IsEmail, IsString, IsOptional, IsEnum, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../entities/user.entity';
+import { normalizeEmail } from '../../common/utils/normalize-email.util';
 
 export class CreateUserDto {
     @ApiProperty({
@@ -16,6 +18,7 @@ export class CreateUserDto {
         example: 'juan.perez@ejemplo.com',
         format: 'email',
     })
+    @Transform(({ value }) => (typeof value === 'string' ? normalizeEmail(value) : value))
     @IsEmail()
     email: string;
 
