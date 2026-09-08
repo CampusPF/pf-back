@@ -1,12 +1,16 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { User } from '../users/entities/user.entity';
+import { normalizeEmail } from '../common/utils/normalize-email.util';
+
+/** Código de Postgres para "unique_violation". */
+const POSTGRES_UNIQUE_VIOLATION = '23505';
 
 interface GoogleUserPayload {
     googleId: string;
@@ -27,13 +31,27 @@ export class AuthService {
         const existing = await this.usersService.findByEmail(dto.email);
         if (existing) throw new ConflictException('El email ya está registrado');
 
-        const user = await this.usersService.create({
-            name: dto.name,
-            email: dto.email,
-            password: dto.password, // ya no se hashea acá, lo hace UsersService
-        });
+        try {
+            const user = await this.usersService.create({
+                name: dto.name,
+                email: dto.email,
+                password: dto.password, // ya no se hashea acá, lo hace UsersService
+            });
 
-        return this.buildToken(user);
+            return this.buildToken(user);
+        } catch (error) {
+            // Misma carrera que en loginWithGoogle: dos registros simultáneos
+            // con el mismo email pueden pasar el check de arriba y chocar acá
+            // contra el unique constraint. Lo traducimos a un 409 esperable,
+            // no a un 500.
+            if (
+                error instanceof QueryFailedError &&
+                (error as unknown as { code?: string }).code === POSTGRES_UNIQUE_VIOLATION
+            ) {
+                throw new ConflictException('El email ya está registrado');
+            }
+            throw error;
+        }
     }
 
     async login(dto: LoginDto) {
@@ -53,26 +71,72 @@ export class AuthService {
     }
 
     async loginWithGoogle(googleUser: GoogleUserPayload) {
-        let user = await this.usersRepository.findOne({
-            where: [{ googleId: googleUser.googleId }, { email: googleUser.email }],
-        });
+        // Defensivo: GoogleStrategy ya normaliza, pero este método también se
+        // podría llamar desde otro lado en el futuro sin pasar por ahí.
+        const email = normalizeEmail(googleUser.email);
+        const findExisting = () =>
+            this.usersRepository.findOne({
+                where: [{ googleId: googleUser.googleId }, { email }],
+            });
+
+        let user = await findExisting();
 
         if (!user) {
-            // Primer login con Google: se crea el usuario sin contraseña propia
-            user = this.usersRepository.create({
-                name: googleUser.name,
-                email: googleUser.email,
-                googleId: googleUser.googleId,
-                passwordHash: null,
-            });
-            user = await this.usersRepository.save(user);
+            // Primer login con Google: se crea el usuario sin contraseña propia.
+            //
+            // Carrera: si el mismo usuario dispara dos requests casi
+            // simultáneos a este callback la primera vez (doble click, dos
+            // pestañas), ambos pueden pasar el `if (!user)` de arriba y
+            // ambos intentar crear la fila. El que pierde la carrera choca
+            // contra el unique constraint de email/googleId — en vez de
+            // propagar ese 500, recuperamos al usuario que sí se creó.
+            try {
+                user = await this.usersRepository.save(
+                    this.usersRepository.create({
+                        name: googleUser.name,
+                        email,
+                        googleId: googleUser.googleId,
+                        passwordHash: null,
+                    }),
+                );
+            } catch (error) {
+                user = await this.recoverFromRaceOrRethrow(error, findExisting);
+            }
         } else if (!user.googleId) {
-            // Ya existía con email/password normal: vinculamos la cuenta de Google
+            // Ya existía con email/password normal: vinculamos la cuenta de
+            // Google. Misma carrera posible si el usuario dispara dos
+            // requests casi simultáneos vinculando la cuenta por primera vez.
             user.googleId = googleUser.googleId;
-            user = await this.usersRepository.save(user);
+            try {
+                user = await this.usersRepository.save(user);
+            } catch (error) {
+                user = await this.recoverFromRaceOrRethrow(error, findExisting);
+            }
         }
 
         return this.buildToken(user);
+    }
+
+    /**
+     * Ante un choque de unique constraint (23505), asumimos que fue una
+     * carrera contra un request gemelo que ganó, y devolvemos ESE usuario en
+     * vez de un 500. Cualquier otro error se re-lanza tal cual: no queremos
+     * ocultar un error real detrás de "debe haber sido una carrera".
+     */
+    private async recoverFromRaceOrRethrow(
+        error: unknown,
+        findExisting: () => Promise<User | null>,
+    ): Promise<User> {
+        const isUniqueViolation =
+            error instanceof QueryFailedError &&
+            (error as unknown as { code?: string }).code === POSTGRES_UNIQUE_VIOLATION;
+
+        if (!isUniqueViolation) throw error;
+
+        const existing = await findExisting();
+        if (!existing) throw error; // no debería pasar; no ocultamos el error si pasa
+
+        return existing;
     }
 
     private buildToken(user: { id: string; email: string; role: string }) {

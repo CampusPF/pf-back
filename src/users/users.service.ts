@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { User, UserRole, UserStatus } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { normalizeEmail } from '../common/utils/normalize-email.util';
 
 /**
  * Costo de bcrypt. 12 es el mínimo razonable hoy: cada +1 duplica el tiempo
@@ -24,7 +25,10 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
     const user = this.usersRepository.create({
       name: dto.name,
-      email: dto.email,
+      // Defensivo: dto.email ya viene normalizado por el @Transform del DTO
+      // cuando entra por HTTP, pero este service también se llama directo
+      // (AuthService.register, seeders) sin pasar por el ValidationPipe.
+      email: normalizeEmail(dto.email),
       passwordHash,
       role: dto.role ?? UserRole.STUDENT,
       status: UserStatus.ACTIVE,
@@ -72,8 +76,12 @@ export class UsersService {
     // Único lugar que pide passwordHash explícitamente (la columna es
     // select:false en la entidad): el login lo necesita para el bcrypt.compare.
     // El objeto que devuelve NO debe salir tal cual en una respuesta HTTP.
+    //
+    // Normaliza el argumento acá también (no solo en los DTOs): así, sin
+    // importar quién llame a este método, "Usuario@Gmail.com" siempre
+    // encuentra la misma fila que "usuario@gmail.com".
     return this.usersRepository.findOne({
-      where: { email },
+      where: { email: normalizeEmail(email) },
       select: {
         id: true,
         name: true,

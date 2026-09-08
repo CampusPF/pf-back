@@ -8,8 +8,10 @@ import {
     IsPhoneNumber,
     IsOptional,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Match } from '../decorators/match.decorator';
+import { normalizeEmail } from '../../common/utils/normalize-email.util';
 
 export class RegisterDto {
     @ApiProperty({
@@ -31,6 +33,10 @@ export class RegisterDto {
         maxLength: 255,
         required: true,
     })
+    // Normaliza ANTES de validar/usar: así "Usuario@Gmail.com" y
+    // "usuario@gmail.com " (con espacio) resuelven al mismo usuario, y no
+    // crean una cuenta duplicada respecto de un login posterior por Google.
+    @Transform(({ value }) => (typeof value === 'string' ? normalizeEmail(value) : value))
     @IsEmail()
     email: string;
 
