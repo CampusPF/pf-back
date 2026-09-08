@@ -96,6 +96,13 @@ export class UsersController {
     }
   }
 
+  @Patch(':id/restore')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  restore(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.restore(id);
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
