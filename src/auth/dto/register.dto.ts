@@ -12,6 +12,7 @@ import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Match } from '../decorators/Match.decorator';
 import { normalizeEmail } from '../../common/utils/normalize-email.util';
+import { IsAdult } from '../decorators/is-adult.decorator';
 
 export class RegisterDto {
     @ApiProperty({
@@ -73,7 +74,11 @@ export class RegisterDto {
         example: '1995-08-23',
         required: true,
     })
-    @IsDateString({}, { message: 'La fecha de nacimiento debe tener formato válido (YYYY-MM-DD)' })
+    @IsDateString(
+        {},
+        { message: 'La fecha de nacimiento debe tener formato válido (YYYY-MM-DD)' },
+    )
+    @IsAdult()
     birthDate: string;
 
     @ApiProperty({
