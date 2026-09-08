@@ -29,8 +29,9 @@ export class CategoriesService {
     return this.categoriesRepository.save(category);
   }
 
-  async findAll(): Promise<Category[]> {
+  async findAll(includeInactive = false): Promise<Category[]> {
     return this.categoriesRepository.find({
+      where: includeInactive ? {} : { isActive: true },
       order: { name: 'ASC' },
     });
   }
@@ -64,8 +65,20 @@ export class CategoriesService {
     return this.categoriesRepository.save(category);
   }
 
-  async remove(id: string): Promise<void> {
+  /**
+   * Borrado lógico: nunca se elimina la fila. Se marca isActive:false para
+   * que deje de aparecer en el catálogo público, pero los cursos que ya la
+   * referencian (courses.categoryId) no quedan con una FK rota.
+   */
+  async remove(id: string): Promise<Category> {
     const category = await this.findOne(id);
-    await this.categoriesRepository.remove(category);
+    category.isActive = false;
+    return this.categoriesRepository.save(category);
+  }
+
+  async restore(id: string): Promise<Category> {
+    const category = await this.findOne(id);
+    category.isActive = true;
+    return this.categoriesRepository.save(category);
   }
 }

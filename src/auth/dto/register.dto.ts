@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Match } from '../decorators/match.decorator';
+import { Match } from '../decorators/Match.decorator';
 import { normalizeEmail } from '../../common/utils/normalize-email.util';
 
 export class RegisterDto {

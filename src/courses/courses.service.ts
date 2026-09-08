@@ -45,8 +45,9 @@ export class CoursesService {
     return this.coursesRepository.save(course);
   }
 
-  async findAll(): Promise<Course[]> {
+  async findAll(includeInactive = false): Promise<Course[]> {
     return this.coursesRepository.find({
+      where: includeInactive ? {} : { isActive: true },
       relations: { category: true, instructor: true },
       order: { createdAt: 'DESC' },
     });
@@ -88,8 +89,20 @@ export class CoursesService {
     return this.coursesRepository.save(course);
   }
 
-  async remove(id: string): Promise<void> {
+  /**
+   * Borrado lógico: un curso con inscripciones activas no se puede eliminar
+   * físicamente sin romper el historial de esos estudiantes. Se marca
+   * isActive:false para sacarlo del catálogo público sin perder datos.
+   */
+  async remove(id: string): Promise<Course> {
     const course = await this.findOne(id);
-    await this.coursesRepository.remove(course);
+    course.isActive = false;
+    return this.coursesRepository.save(course);
+  }
+
+  async restore(id: string): Promise<Course> {
+    const course = await this.findOne(id);
+    course.isActive = true;
+    return this.coursesRepository.save(course);
   }
 }

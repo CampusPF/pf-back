@@ -7,19 +7,20 @@ import {
   Param,
   Delete,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { LessonsService } from './lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
- * Antes este controller no tenía ningún guard: cualquiera, sin token, podía
- * crear, editar o borrar lecciones. Ahora escribir es solo ADMIN, y leer
- * exige estar logueado (por el JwtAuthGuard global) — decisión de producto:
- * el contenido de las lecciones solo se ve con sesión iniciada.
+ * El JwtAuthGuard es global (APP_GUARD): leer exige estar logueado por
+ * defecto. RolesGuard NO es global, así que hay que aplicarlo explícitamente
+ * en cada ruta que además necesite restringir por rol.
  */
 @ApiTags('lessons')
 @Controller('lessons')
@@ -28,6 +29,7 @@ export class LessonsController {
 
   @Post()
   @ApiBearerAuth()
+  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Crear una lección dentro de un módulo' })
   @ApiResponse({ status: 201, description: 'Lección creada correctamente' })
@@ -38,11 +40,15 @@ export class LessonsController {
 
   @Get()
   @ApiOperation({ summary: 'Listar todas las lecciones (opcionalmente filtradas por módulo)' })
-  findAll(@Query('moduleId') moduleId?: string) {
+  findAll(
+    @Query('moduleId') moduleId?: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    const showInactive = includeInactive === 'true';
     if (moduleId) {
-      return this.lessonsService.findAllByModule(moduleId);
+      return this.lessonsService.findAllByModule(moduleId, showInactive);
     }
-    return this.lessonsService.findAll();
+    return this.lessonsService.findAll(showInactive);
   }
 
   @Get(':id')
@@ -54,16 +60,27 @@ export class LessonsController {
 
   @Patch(':id')
   @ApiBearerAuth()
+  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Actualizar una lección' })
   update(@Param('id') id: string, @Body() dto: UpdateLessonDto) {
     return this.lessonsService.update(id, dto);
   }
 
+  @Patch(':id/restore')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Reactivar una lección previamente eliminada' })
+  restore(@Param('id') id: string) {
+    return this.lessonsService.restore(id);
+  }
+
   @Delete(':id')
   @ApiBearerAuth()
+  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Eliminar una lección' })
+  @ApiOperation({ summary: 'Eliminar una lección (borrado lógico)' })
   remove(@Param('id') id: string) {
     return this.lessonsService.remove(id);
   }

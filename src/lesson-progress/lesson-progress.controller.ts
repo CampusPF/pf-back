@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { LessonProgressService } from './lesson-progress.service';
@@ -14,6 +15,7 @@ import { CreateLessonProgressDto } from './dto/create-lesson-progress.dto';
 import { UpdateLessonProgressDto } from './dto/update-lesson-progress.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
@@ -23,7 +25,12 @@ import { UserRole } from '../users/entities/user.entity';
  * cliente. El dueño del recurso se deduce siempre del JWT (@CurrentUser) y el
  * service valida la titularidad contra la inscripción asociada.
  *
+ * DELETE acá es físico a propósito (no hay borrado lógico): un registro de
+ * progreso no es un recurso "catálogo" que se oculte, es el hecho de que el
+ * alumno completó o no una lección — borrarlo significa resetear ese hecho.
+ *
  * La autenticación la aplica el JwtAuthGuard global (ver app.module.ts).
+ * RolesGuard NO es global: hay que aplicarlo explícitamente donde se usa @Roles().
  */
 @ApiTags('lesson-progress')
 @ApiBearerAuth()
@@ -36,20 +43,16 @@ export class LessonProgressController {
   @ApiResponse({ status: 403, description: 'Esa inscripción no te pertenece' })
   create(
     @Body() createLessonProgressDto: CreateLessonProgressDto,
-    // Antes este parámetro venía sin decorador, así que Nest le pasaba
-    // undefined y el chequeo de titularidad del service nunca comparaba
-    // contra un usuario real.
     @CurrentUser('id') userId: string,
   ) {
     return this.lessonProgressService.create(createLessonProgressDto, userId);
   }
 
   @Get()
+  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: '[Admin] Listar el progreso de todos los alumnos' })
   findAll() {
-    // Operación de administración explícita: devuelve el progreso de toda la
-    // plataforma, por eso queda restringida a ADMIN.
     return this.lessonProgressService.findAll();
   }
 
@@ -81,7 +84,7 @@ export class LessonProgressController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Borrar un registro de progreso propio' })
+  @ApiOperation({ summary: 'Borrar (físicamente) un registro de progreso propio' })
   @ApiResponse({ status: 403, description: 'Ese progreso no te pertenece' })
   remove(
     @Param('id', ParseUUIDPipe) id: string,

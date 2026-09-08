@@ -19,6 +19,9 @@ export class Lesson {
     @Column({ name: 'order_index' })
     order: number;
 
+    @Column({ default: true })
+    isActive: boolean;
+
     @ManyToOne(() => CourseModule, (module) => module.lessons, { onDelete: 'CASCADE' })
     module: CourseModule;
 
