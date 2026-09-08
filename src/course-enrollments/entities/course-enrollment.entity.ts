@@ -18,6 +18,9 @@ export class CourseEnrollment {
     @Column({ name: 'progress_percent', default: 0 })
     progressPercent: number;
 
+    @Column({ default: true })
+    isActive: boolean;
+
     @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
     completedAt: Date;
 

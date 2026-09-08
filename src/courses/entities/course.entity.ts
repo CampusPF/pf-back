@@ -27,6 +27,9 @@ export class Course {
     @Column({ name: 'image_url', nullable: true })
     imageUrl: string;
 
+    @Column({ default: true })
+    isActive: boolean;
+
     @ManyToOne(() => User, (user) => user.coursesCreated, { onDelete: 'CASCADE' })
     instructor: User;
 

@@ -1,132 +1,128 @@
 import {
-    Controller,
-    Post,
-    Get,
-    Body,
-    UseGuards,
-    HttpCode,
-    HttpStatus,
-    Req,
-    Res,
-} from '@nestjs/common';
-import type { Response } from 'express';
-import { ConfigService } from '@nestjs/config';
-import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { GoogleAuthGuard } from './guards/google-auth.guard';
-import { Public } from './decorators/public.decorator';
-import { Throttle } from '@nestjs/throttler';
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  Req,
+  Res,
+} from "@nestjs/common";
+import type { Response } from "express";
+import { ConfigService } from "@nestjs/config";
+import { AuthService } from "./auth.service";
+import { RegisterDto } from "./dto/register.dto";
+import { LoginDto } from "./dto/login.dto";
+import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { GoogleAuthGuard } from "./guards/google-auth.guard";
+import { Public } from "./decorators/public.decorator";
+import { Throttle } from "@nestjs/throttler";
 
 // Se leen como función (no como valor) para que se resuelvan en cada request,
 // ya bien cargado el .env, y no en el momento en que se evalúa el decorador.
 const AUTH_THROTTLE_LIMIT = () => Number(process.env.THROTTLE_AUTH_LIMIT ?? 10);
 const AUTH_THROTTLE_TTL_MS = () =>
-    Number(process.env.THROTTLE_TTL ?? 60) * 1000;
+  Number(process.env.THROTTLE_TTL ?? 60) * 1000;
 
 /** Nombre de la cookie que lee el middleware/proxy del front. */
-const AUTH_COOKIE_NAME = 'campus.token';
+const AUTH_COOKIE_NAME = "campus.token";
 
-@Controller('auth')
+@Controller("auth")
 export class AuthController {
-    constructor(
-        private readonly authService: AuthService,
-        private readonly config: ConfigService,
-    ) { }
+  constructor(
+    private readonly authService: AuthService,
+    private readonly config: ConfigService,
+  ) {}
 
-    // Rate limit estricto: son los dos endpoints donde se prueban credenciales.
-    // Sin JWT todavía, el UserOrIpThrottlerGuard cuenta por IP, que es lo que
-    // frena el ataque de fuerza bruta / relleno de credenciales.
-    @Public()
-    @Post('register')
-    @Throttle({
-        default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
-    })
-    async register(
-        @Body() dto: RegisterDto,
-        @Res({ passthrough: true }) res: Response,
-    ) {
-        const result = await this.authService.register(dto);
-        this.setAuthCookie(res, result.access_token);
-        return result; // passthrough:true → Nest sigue mandando esto como body JSON
-    }
+  // Rate limit estricto: son los dos endpoints donde se prueban credenciales.
+  // Sin JWT todavía, el UserOrIpThrottlerGuard cuenta por IP, que es lo que
+  // frena el ataque de fuerza bruta / relleno de credenciales.
+  @Public()
+  @Post("register")
+  @Throttle({
+    default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
+  })
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.register(dto);
+    this.setAuthCookie(res, result.access_token);
+    return result; // passthrough:true → Nest sigue mandando esto como body JSON
+  }
 
-    @Public()
-    @Post('login')
-    @HttpCode(HttpStatus.OK)
-    @Throttle({
-        default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
-    })
-    async login(
-        @Body() dto: LoginDto,
-        @Res({ passthrough: true }) res: Response,
-    ) {
-        const result = await this.authService.login(dto);
-        this.setAuthCookie(res, result.access_token);
-        return result;
-    }
+  @Public()
+  @Post("login")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
+  })
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(dto);
+    this.setAuthCookie(res, result.access_token);
+    return result;
+  }
 
-    @Post('logout')
-    @HttpCode(HttpStatus.OK)
-    @UseGuards(JwtAuthGuard)
-    logout(@Res({ passthrough: true }) res: Response) {
-        // Complemento necesario de setAuthCookie: si seteamos la cookie en
-        // login/register, logout tiene que borrarla, si no queda viva hasta
-        // que expire sola aunque el cliente ya "cerró sesión".
-        res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
-        return { message: 'Sesión cerrada. Eliminá el token del lado del cliente.' };
-    }
+  @Post("logout")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  logout(@Res({ passthrough: true }) res: Response) {
+    // Complemento necesario de setAuthCookie: si seteamos la cookie en
+    // login/register, logout tiene que borrarla, si no queda viva hasta
+    // que expire sola aunque el cliente ya "cerró sesión".
+    res.clearCookie(AUTH_COOKIE_NAME, { path: "/" });
+    return {
+      message: "Sesión cerrada. Eliminá el token del lado del cliente.",
+    };
+  }
 
-    @Public()
-    @Get('google')
-    @UseGuards(GoogleAuthGuard)
-    googleAuth() {
-        // No necesita cuerpo: el guard redirige automáticamente a la pantalla de login de Google
-    }
+  @Public()
+  @Get("google")
+  @UseGuards(GoogleAuthGuard)
+  googleAuth() {
+    // No necesita cuerpo: el guard redirige automáticamente a la pantalla de login de Google
+  }
 
-    @Public()
-    @Get('google/callback')
-    @UseGuards(GoogleAuthGuard)
-    async googleAuthCallback(@Req() req: any, @Res() res: Response) {
-        const result = await this.authService.loginWithGoogle(req.user);
-        this.setAuthCookie(res, result.access_token);
+  @Public()
+  @Get("google/callback")
+  @UseGuards(GoogleAuthGuard)
+  async googleAuthCallback(@Req() req: any, @Res() res: Response) {
+    const result = await this.authService.loginWithGoogle(req.user);
+    this.setAuthCookie(res, result.access_token);
 
-        // FRONTEND_URL puede traer varios orígenes separados por coma (ver
-        // main.ts / CORS); para un redirect necesitamos UNO solo, así que
-        // usamos el primero de la lista.
-        const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000')
-            .split(',')[0]
-            .trim();
+    const frontendUrl = (process.env.FRONTEND_URL ?? "http://localhost:3000")
+      .split(",")[0]
+      .trim();
 
-        // TODO(seguridad): una vez que el front confirme que su middleware
-        // ya lee la cookie `campus.token` y no necesita más el token en la
-        // URL, sacar el query param de acá — hoy queda como fallback porque
-        // no tenemos esa confirmación. El query param en la URL es visible
-        // en el historial del navegador y en logs, la cookie httpOnly no.
-        return res.redirect(`${frontendUrl}/auth/callback?token=${result.access_token}`);
-    }
+    return res.redirect(
+      `${frontendUrl}/auth/callback?token=${result.access_token}`,
+    );
+  }
 
-    /**
-     * Setea el JWT como cookie httpOnly, además de devolverlo en el body
-     * (que el front hoy sigue leyendo directo — esto suma, no reemplaza).
-     *
-     * httpOnly: JS del front no puede leerla (mitiga robo por XSS).
-     * secure: solo viaja por HTTPS en producción (en dev, sin HTTPS local,
-     *   el navegador la descartaría si fuera true).
-     * sameSite 'lax': la manda en navegación normal (ej. el redirect de
-     *   Google) pero no en requests cross-site de terceros.
-     */
-    private setAuthCookie(res: Response, token: string): void {
-        const isProduction = this.config.get<string>('NODE_ENV') === 'production';
-        const expiresInSeconds = Number(this.config.get('JWT_EXPIRES_IN') ?? 3600);
+  /**
+   * Setea el JWT como cookie httpOnly, además de devolverlo en el body
+   * (que el front hoy sigue leyendo directo — esto suma, no reemplaza).
+   *
+   * httpOnly: JS del front no puede leerla (mitiga robo por XSS).
+   * secure: solo viaja por HTTPS en producción (en dev, sin HTTPS local,
+   *   el navegador la descartaría si fuera true).
+   * sameSite 'lax': la manda en navegación normal (ej. el redirect de
+   *   Google) pero no en requests cross-site de terceros.
+   */
+  private setAuthCookie(res: Response, token: string): void {
+    const isProduction = this.config.get<string>("NODE_ENV") === "production";
+    const expiresInSeconds = Number(this.config.get("JWT_EXPIRES_IN") ?? 3600);
 
-        res.cookie(AUTH_COOKIE_NAME, token, {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: 'lax',
-            path: '/',
-            maxAge: expiresInSeconds * 1000,
-        });
-    }
+    res.cookie(AUTH_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "lax",
+      path: "/",
+      maxAge: expiresInSeconds * 1000,
+    });
+  }
 }

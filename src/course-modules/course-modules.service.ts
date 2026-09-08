@@ -41,8 +41,9 @@ export class CourseModulesService {
     return this.courseModulesRepository.save(courseModule);
   }
 
-  async findAll(): Promise<CourseModuleEntity[]> {
+  async findAll(includeInactive = false): Promise<CourseModuleEntity[]> {
     return this.courseModulesRepository.find({
+      where: includeInactive ? {} : { isActive: true },
       relations: { course: true },
       order: { order: 'ASC' },
     });
@@ -80,8 +81,20 @@ export class CourseModulesService {
     return this.courseModulesRepository.save(courseModule);
   }
 
-  async remove(id: string): Promise<void> {
+  /**
+   * Borrado lógico: un módulo con lecciones ya cursadas por estudiantes no
+   * debería desaparecer del historial. isActive:false lo saca del temario
+   * visible sin perder el registro de LessonProgress asociado.
+   */
+  async remove(id: string): Promise<CourseModuleEntity> {
     const courseModule = await this.findOne(id);
-    await this.courseModulesRepository.remove(courseModule);
+    courseModule.isActive = false;
+    return this.courseModulesRepository.save(courseModule);
+  }
+
+  async restore(id: string): Promise<CourseModuleEntity> {
+    const courseModule = await this.findOne(id);
+    courseModule.isActive = true;
+    return this.courseModulesRepository.save(courseModule);
   }
 }
