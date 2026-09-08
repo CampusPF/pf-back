@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Match } from '../decorators/Match.decorator';
+import { Match } from '../decorators/match.decorator';
 import { normalizeEmail } from '../../common/utils/normalize-email.util';
 import { IsAdult } from '../decorators/is-adult.decorator';
 

@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Req,
   Res,
+  UnauthorizedException,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { ConfigService } from "@nestjs/config";
@@ -91,12 +92,25 @@ export class AuthController {
   @Get("google/callback")
   @UseGuards(GoogleAuthGuard)
   async googleAuthCallback(@Req() req: any, @Res() res: Response) {
-    const result = await this.authService.loginWithGoogle(req.user);
-    this.setAuthCookie(res, result.access_token);
-
     const frontendUrl = (process.env.FRONTEND_URL ?? "http://localhost:3000")
       .split(",")[0]
       .trim();
+
+    let result: Awaited<ReturnType<AuthService["loginWithGoogle"]>>;
+    try {
+      result = await this.authService.loginWithGoogle(req.user);
+    } catch (error) {
+      // Este endpoint es un redirect del navegador, no un fetch: si dejamos
+      // que Nest devuelva el 401 como JSON el usuario queda en una página
+      // muerta. En vez de eso lo mandamos de vuelta al login del front con
+      // un motivo, y sin dejar cookie de sesión.
+      if (error instanceof UnauthorizedException) {
+        return res.redirect(`${frontendUrl}/login?error=not_registered`);
+      }
+      throw error;
+    }
+
+    this.setAuthCookie(res, result.access_token);
 
     return res.redirect(
       `${frontendUrl}/auth/callback?token=${result.access_token}`,

@@ -82,26 +82,13 @@ export class AuthService {
         let user = await findExisting();
 
         if (!user) {
-            // Primer login con Google: se crea el usuario sin contraseña propia.
-            //
-            // Carrera: si el mismo usuario dispara dos requests casi
-            // simultáneos a este callback la primera vez (doble click, dos
-            // pestañas), ambos pueden pasar el `if (!user)` de arriba y
-            // ambos intentar crear la fila. El que pierde la carrera choca
-            // contra el unique constraint de email/googleId — en vez de
-            // propagar ese 500, recuperamos al usuario que sí se creó.
-            try {
-                user = await this.usersRepository.save(
-                    this.usersRepository.create({
-                        name: googleUser.name,
-                        email,
-                        googleId: googleUser.googleId,
-                        passwordHash: null,
-                    }),
-                );
-            } catch (error) {
-                user = await this.recoverFromRaceOrRethrow(error, findExisting);
-            }
+            // Google NO registra usuarios nuevos: solo sirve para entrar o
+            // enlazar cuentas que ya existen (creadas por el formulario de
+            // registro). Si no hay ninguna cuenta con este email/googleId,
+            // se rechaza el acceso.
+            throw new UnauthorizedException(
+                'No existe una cuenta con este email. Primero registrate en la plataforma.',
+            );
         } else if (!user.googleId) {
             // Ya existía con email/password normal: vinculamos la cuenta de
             // Google. Misma carrera posible si el usuario dispara dos
