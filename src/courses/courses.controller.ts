@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CoursesService } from './courses.service';
@@ -44,8 +45,8 @@ export class CoursesController {
   @Get()
   @Public()
   @ApiOperation({ summary: 'Obtener todos los cursos' })
-  findAll() {
-    return this.coursesService.findAll();
+  findAll(@Query('includeInactive') includeInactive?: string) {
+    return this.coursesService.findAll(includeInactive === 'true');
   }
 
   @Get(':id')
@@ -66,14 +67,22 @@ export class CoursesController {
     return this.coursesService.update(id, updateCourseDto);
   }
 
+  @Patch(':id/restore')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Reactivar un curso previamente eliminado' })
+  restore(@Param('id') id: string) {
+    return this.coursesService.restore(id);
+  }
+
   @Delete(':id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Eliminar un curso' })
+  @ApiOperation({ summary: 'Eliminar un curso (borrado lógico)' })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   remove(@Param('id') id: string) {
     return this.coursesService.remove(id);
   }
 }
-

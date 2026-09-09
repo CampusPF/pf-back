@@ -12,7 +12,12 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: true → Nest guarda los bytes exactos del body en `req.rawBody`.
+  // Lo necesita el webhook de Stripe (POST /payments/webhook): la firma se
+  // verifica contra el body CRUDO, no contra el JSON ya parseado.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 

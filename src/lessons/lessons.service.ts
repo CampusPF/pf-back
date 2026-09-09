@@ -41,25 +41,42 @@ export class LessonsService {
     return this.lessonsRepository.save(lesson);
   }
 
-  async findAll(): Promise<Lesson[]> {
+  /**
+   * Vista de lista (catálogo / sidebar del curso): NUNCA incluye
+   * content/videoUrl — son `select:false` en la entidad, así que no hace falta
+   * pedir nada especial, pero se deja explícito el porqué: el contenido real
+   * solo sale por findOne y solo con acceso.
+   */
+  async findAll(includeInactive = false): Promise<Lesson[]> {
     return this.lessonsRepository.find({
+      where: includeInactive ? {} : { isActive: true },
       relations: { module: true },
       order: { order: 'ASC' },
     });
   }
 
-  async findAllByModule(moduleId: string): Promise<Lesson[]> {
+  async findAllByModule(moduleId: string, includeInactive = false): Promise<Lesson[]> {
     return this.lessonsRepository.find({
-      where: { module: { id: moduleId } },
+      where: includeInactive
+        ? { module: { id: moduleId } }
+        : { module: { id: moduleId }, isActive: true },
       order: { order: 'ASC' },
     });
   }
 
+  /**
+   * Único punto que trae content/videoUrl (vía addSelect, porque son
+   * `select:false`). Incluye module.course para que el controller pueda
+   * resolver el gate de acceso (course.priceInCents) sin una query aparte.
+   */
   async findOne(id: string): Promise<Lesson> {
-    const lesson = await this.lessonsRepository.findOne({
-      where: { id },
-      relations: { module: true },
-    });
+    const lesson = await this.lessonsRepository
+      .createQueryBuilder('lesson')
+      .leftJoinAndSelect('lesson.module', 'module')
+      .leftJoinAndSelect('module.course', 'course')
+      .addSelect(['lesson.content', 'lesson.videoUrl'])
+      .where('lesson.id = :id', { id })
+      .getOne();
 
     if (!lesson) {
       throw new NotFoundException(`Lección con id ${id} no encontrada`);
@@ -79,8 +96,20 @@ export class LessonsService {
     return this.lessonsRepository.save(lesson);
   }
 
-  async remove(id: string): Promise<void> {
+  /**
+   * Borrado lógico: si un estudiante ya tiene LessonProgress registrado para
+   * esta lección, borrarla físicamente rompería ese historial. isActive:false
+   * la saca del temario visible sin perder el progreso ya cursado.
+   */
+  async remove(id: string): Promise<Lesson> {
     const lesson = await this.findOne(id);
-    await this.lessonsRepository.remove(lesson);
+    lesson.isActive = false;
+    return this.lessonsRepository.save(lesson);
+  }
+
+  async restore(id: string): Promise<Lesson> {
+    const lesson = await this.findOne(id);
+    lesson.isActive = true;
+    return this.lessonsRepository.save(lesson);
   }
 }

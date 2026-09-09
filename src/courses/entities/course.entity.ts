@@ -27,6 +27,19 @@ export class Course {
     @Column({ name: 'image_url', nullable: true })
     imageUrl: string;
 
+    // Precio en la unidad mínima de la moneda (centavos para usd). 0 = curso
+    // gratis: no pasa por Stripe, se puede inscribir directo. > 0 obliga a
+    // pagar vía POST /payments/create-intent y la inscripción la crea el
+    // webhook, nunca POST /course-enrollments.
+    @Column({ name: 'price_in_cents', type: 'int', default: 0 })
+    priceInCents: number;
+
+    @Column({ type: 'varchar', length: 3, default: 'usd' })
+    currency: string;
+
+    @Column({ default: true })
+    isActive: boolean;
+
     @ManyToOne(() => User, (user) => user.coursesCreated, { onDelete: 'CASCADE' })
     instructor: User;
 

@@ -7,6 +7,9 @@ import {
     MaxLength,
     IsUrl,
     IsEnum,
+    IsInt,
+    Min,
+    Length,
 } from 'class-validator';
 import { CourseDifficulty } from '../entities/course.entity';
 
@@ -57,4 +60,25 @@ export class CreateCourseDto {
     @IsUUID()
     @IsNotEmpty()
     categoryId: string;
+
+    @ApiPropertyOptional({
+        example: 4999,
+        description:
+            'Precio en la unidad mínima de la moneda (centavos para usd). 0 = curso gratis.',
+        default: 0,
+    })
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    priceInCents?: number;
+
+    @ApiPropertyOptional({
+        example: 'usd',
+        description: 'Moneda ISO-4217 en minúsculas (la que espera Stripe).',
+        default: 'usd',
+    })
+    @IsOptional()
+    @IsString()
+    @Length(3, 3)
+    currency?: string;
 }

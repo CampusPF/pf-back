@@ -169,19 +169,24 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
     expect(linked?.googleId).toBe('google-id-bruno');
   });
 
-  it('primer login por Google + intento de login por form con password → falla, no confunde usuarios', async () => {
-    await authService.loginWithGoogle({
-      googleId: 'google-id-carla',
-      email: 'carla@test.com',
-      name: 'Carla Test',
-    });
-
+  it('login por Google sin cuenta previa → rechaza, NO crea usuario', async () => {
     await expect(
-      authService.login({ email: 'carla@test.com', password: 'CualquierPass123' } as any),
-    ).rejects.toThrow('Esta cuenta inicia sesión con Google');
+      authService.loginWithGoogle({
+        googleId: 'google-id-carla',
+        email: 'carla@test.com',
+        name: 'Carla Test',
+      }),
+    ).rejects.toThrow('No existe una cuenta con este email');
+
+    const all = await usersService.findAll();
+    expect(all.filter((u) => u.email === 'carla@test.com')).toHaveLength(0);
   });
 
-  it('dos requests concurrentes al primer login por Google (mismo googleId) → un solo usuario, ningún 500', async () => {
+  it('dos requests concurrentes al vincular Google (cuenta ya registrada por form) → un solo usuario, ningún 500', async () => {
+    const registered = await authService.register(
+      registerPayload({ name: 'Race Test', email: 'race@test.com' }) as any,
+    );
+
     const googleUser = { googleId: 'google-id-race', email: 'race@test.com', name: 'Race Test' };
 
     // Si la recuperación de carrera no funcionara, uno de los dos rechazaría
@@ -192,7 +197,8 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
       authService.loginWithGoogle(googleUser),
     ]);
 
-    expect(r1.user.id).toBe(r2.user.id);
+    expect(r1.user.id).toBe(registered.user.id);
+    expect(r2.user.id).toBe(registered.user.id);
 
     const all = await usersService.findAll();
     expect(all.filter((u) => u.email === 'race@test.com')).toHaveLength(1);

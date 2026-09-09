@@ -72,6 +72,18 @@ export const envValidationSchema = Joi.object({
   GOOGLE_CLIENT_SECRET: requiredInProd(Joi.string()),
   GOOGLE_CALLBACK_URL: requiredInProd(Joi.string().uri()),
 
+  // --- Pagos: Stripe ---
+  // STRIPE_SECRET_KEY: la secret key del backend (sk_test_... / sk_live_...).
+  //   NUNCA la publishable — esa vive en el front
+  //   (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY).
+  // STRIPE_WEBHOOK_SECRET: whsec_... — lo da `stripe listen` en local y el
+  //   dashboard en producción. Sin él no se puede verificar la firma del
+  //   webhook y ningún pago se confirma.
+  // En dev son opcionales (se puede levantar la app sin pagos); los endpoints
+  // de /payments responden 503 hasta que estén configuradas.
+  STRIPE_SECRET_KEY: requiredInProd(Joi.string()),
+  STRIPE_WEBHOOK_SECRET: requiredInProd(Joi.string()),
+
   // --- Swagger ---
   // Por defecto Swagger queda deshabilitado en producción (ver main.ts).
   SWAGGER_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
@@ -85,10 +97,9 @@ export const envValidationSchema = Joi.object({
   ANTHROPIC_API_KEY: Joi.string().optional(),
   OPENAI_API_KEY: Joi.string().optional(),
 
-  // TODO(seguridad): cuando se integre la pasarela de pagos real (Mercado
-  // Pago), agregar acá MP_ACCESS_TOKEN y MP_WEBHOOK_SECRET como requeridas
-  // en producción. Hoy el flujo de pago de subscriptions es una simulación
-  // (ver subscriptions.service.ts) y no hay SDK de MP instalado.
+  // NOTA: el proyecto arrancó con notas para Mercado Pago pero el equipo fue
+  // con Stripe (ver bloque STRIPE_* arriba). Las variables MP_* quedaron sin
+  // uso y no se validan.
 
   // TODO(seguridad): cuando se integre Cloudinary, agregar CLOUDINARY_CLOUD_NAME,
   // CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET como requeridas en producción.

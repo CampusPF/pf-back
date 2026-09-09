@@ -11,6 +11,7 @@ import { LessonProgressModule } from './lesson-progress/lesson-progress.module';
 import { CourseEnrollmentsModule } from './course-enrollments/course-enrollments.module';
 import { AuthModule } from './auth/auth.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { PaymentsModule } from './payments/payments.module';
 import { AiTutorModule } from './aiTutor/aiTutor.module';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
@@ -79,6 +80,7 @@ import { HealthModule } from './health/health.module';
     LessonProgressModule,
     AuthModule,
     SubscriptionsModule,
+    PaymentsModule,
     AiTutorModule
   ],
   controllers: [AppController],

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole, UserStatus } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -23,16 +23,16 @@ export class UsersService {
 
   async create(dto: CreateUserDto): Promise<User> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
+
     const user = this.usersRepository.create({
       name: dto.name,
-      // Defensivo: dto.email ya viene normalizado por el @Transform del DTO
-      // cuando entra por HTTP, pero este service también se llama directo
-      // (AuthService.register, seeders) sin pasar por el ValidationPipe.
+      // Defensivo: también normalizamos cuando el service se llama directamente.
       email: normalizeEmail(dto.email),
       passwordHash,
       role: dto.role ?? UserRole.STUDENT,
       status: UserStatus.ACTIVE,
     });
+
     return this.usersRepository.save(user);
   }
 
@@ -42,9 +42,9 @@ export class UsersService {
     });
   }
 
-
-  async findAll(): Promise<User[]> {
+  async findAll(includeDeleted = false): Promise<User[]> {
     return this.usersRepository.find({
+      where: includeDeleted ? {} : { status: Not(UserStatus.DELETED) },
       select: {
         id: true,
         name: true,
@@ -68,18 +68,16 @@ export class UsersService {
         createdAt: true,
       },
     });
-    if (!user) throw new NotFoundException(`Usuario ${id} no encontrado`);
+
+    if (!user) {
+      throw new NotFoundException(`Usuario ${id} no encontrado`);
+    }
+
     return user;
   }
 
   findByEmail(email: string): Promise<User | null> {
-    // Único lugar que pide passwordHash explícitamente (la columna es
-    // select:false en la entidad): el login lo necesita para el bcrypt.compare.
-    // El objeto que devuelve NO debe salir tal cual en una respuesta HTTP.
-    //
-    // Normaliza el argumento acá también (no solo en los DTOs): así, sin
-    // importar quién llame a este método, "Usuario@Gmail.com" siempre
-    // encuentra la misma fila que "usuario@gmail.com".
+    // Único lugar que pide passwordHash explícitamente.
     return this.usersRepository.findOne({
       where: { email: normalizeEmail(email) },
       select: {
@@ -96,12 +94,25 @@ export class UsersService {
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
+
     Object.assign(user, dto);
+
     return this.usersRepository.save(user);
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.usersRepository.delete(id);
-    if (result.affected === 0) throw new NotFoundException(`Usuario ${id} no encontrado`);
+  async remove(id: string): Promise<User> {
+    const user = await this.findOne(id);
+
+    user.status = UserStatus.DELETED;
+
+    return this.usersRepository.save(user);
+  }
+
+  async restore(id: string): Promise<User> {
+    const user = await this.findOne(id);
+
+    user.status = UserStatus.ACTIVE;
+
+    return this.usersRepository.save(user);
   }
 }

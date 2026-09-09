@@ -21,6 +21,10 @@ export enum UserStatus {
     ACTIVE = 'active',
     INACTIVE = 'inactive',
     BANNED = 'banned',
+    // Baja de cuenta hecha por un admin (borrado lógico). Separado de BANNED
+    // a propósito: BANNED implica sanción por incumplir normas, DELETED es
+    // simplemente "esta cuenta ya no debe existir/loguearse", sin ese matiz.
+    DELETED = 'deleted',
 }
 
 @Entity('users')
