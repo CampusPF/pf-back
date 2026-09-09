@@ -10,10 +10,15 @@ export class Lesson {
     @Column()
     title: string;
 
-    @Column({ type: 'text', nullable: true })
+    // select:false → NINGUNA query trae estas dos columnas por defecto
+    // (listados, sidebar, lesson-progress, aiTutor...). El único lugar que las
+    // vuelve a pedir explícitamente es LessonsService.findOne (vía addSelect),
+    // y ahí LessonsController decide si las devuelve o las anula según el
+    // acceso del usuario al curso.
+    @Column({ type: 'text', nullable: true, select: false })
     content: string;
 
-    @Column({ name: 'video_url', nullable: true })
+    @Column({ name: 'video_url', nullable: true, select: false })
     videoUrl: string;
 
     @Column({ name: 'order_index' })
