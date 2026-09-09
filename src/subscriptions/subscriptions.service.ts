@@ -1,18 +1,23 @@
 import {
   Injectable,
   NotFoundException,
-  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subscription, SubscriptionPlan, SubscriptionStatus } from './entities/subscription.entity';
-import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 
-const PLAN_PRICES: Record<SubscriptionPlan, number> = {
+/** Precio de cada plan en centavos de USD (la unidad que espera Stripe). */
+export const PLAN_PRICES_IN_CENTS: Record<SubscriptionPlan, number> = {
   [SubscriptionPlan.FREE]: 0,
-  [SubscriptionPlan.PREMIUM]: 9.99,
+  [SubscriptionPlan.PREMIUM]: 999,
 };
+
+/** Moneda en la que se cobran los planes. */
+export const PLAN_CURRENCY = 'usd';
+
+/** Vigencia de una suscripción activada, en meses. */
+const SUBSCRIPTION_MONTHS = 1;
 
 @Injectable()
 export class SubscriptionsService {
@@ -21,53 +26,48 @@ export class SubscriptionsService {
     private readonly subscriptionsRepository: Repository<Subscription>,
   ) { }
 
-  async subscribe(userId: string, dto: CreateSubscriptionDto): Promise<Subscription> {
+  /** Precio del plan en centavos. FREE = 0 (no se cobra). */
+  getPlanPriceInCents(plan: SubscriptionPlan): number {
+    return PLAN_PRICES_IN_CENTS[plan];
+  }
+
+  /** ¿El usuario ya tiene una suscripción ACTIVE? */
+  async hasActiveSubscription(userId: string): Promise<boolean> {
+    const count = await this.subscriptionsRepository.count({
+      where: { user: { id: userId }, status: SubscriptionStatus.ACTIVE },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Alta de una suscripción a partir de un pago YA confirmado por el webhook
+   * de Stripe. Es el ÚNICO camino para activar un plan: no hay más un
+   * endpoint que lo haga desde una respuesta del navegador.
+   *
+   * Idempotente: si ya hay una suscripción ACTIVE (webhook duplicado, doble
+   * pestaña), devuelve esa en vez de crear otra.
+   */
+  async activateFromPayment(
+    userId: string,
+    plan: SubscriptionPlan,
+    amountInCents: number,
+  ): Promise<Subscription> {
     const existingActive = await this.subscriptionsRepository.findOne({
       where: { user: { id: userId }, status: SubscriptionStatus.ACTIVE },
     });
-    if (existingActive) {
-      throw new ConflictException('Ya tenés una suscripción activa');
-    }
-
-    // --- Simulación de pago: acá iría la llamada real a Stripe/Mercado Pago ---
-    // TODO(seguridad): CRÍTICO antes de producción. Hoy el pago se aprueba
-    // solo, así que cualquier usuario logueado se da de alta el plan PREMIUM
-    // gratis con un POST /subscriptions.
-    //
-    // Cuando se integre Mercado Pago hay que, como mínimo:
-    //  1. Crear la preferencia de pago desde el backend con MP_ACCESS_TOKEN
-    //     (nunca desde el front) y dejar la suscripción en estado pendiente.
-    //  2. Activar el plan SOLO desde el webhook de MP, nunca desde una
-    //     respuesta del navegador (el usuario puede falsificarla).
-    //  3. En el webhook: validar la firma (header x-signature + x-request-id,
-    //     HMAC con MP_WEBHOOK_SECRET) y devolver 401 si no valida.
-    //  4. No confiar en el body: con el payment id que llega, re-consultar el
-    //     estado real del pago contra la API de MP y recién ahí activar.
-    //  5. Idempotencia: guardar el payment id procesado (columna única) para
-    //     que un reenvío de la notificación no active/cobre dos veces.
-    //  6. El endpoint del webhook va @Public() a propósito (MP no manda
-    //     nuestro JWT), protegido únicamente por la validación de firma.
-    //
-    // No se deja el código escrito porque no hay SDK de MP instalado ni
-    // entidad de pagos en el modelo: definir eso es una decisión de negocio
-    // (¿pago único o suscripción recurrente? ¿qué pasa al vencer?).
-    const paymentSucceeded = true; // siempre "aprueba", es una simulación
-    if (!paymentSucceeded) {
-      throw new ConflictException('El pago fue rechazado');
-    }
-    // ---------------------------------------------------------------------
+    if (existingActive) return existingActive;
 
     const startDate = new Date();
     const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 1); // 1 mes de vigencia
+    endDate.setMonth(endDate.getMonth() + SUBSCRIPTION_MONTHS);
 
     const subscription = this.subscriptionsRepository.create({
       user: { id: userId },
-      plan: dto.plan,
+      plan,
       status: SubscriptionStatus.ACTIVE,
       startDate,
       endDate,
-      lastPaymentAmount: PLAN_PRICES[dto.plan],
+      lastPaymentAmount: amountInCents / 100,
     });
 
     return this.subscriptionsRepository.save(subscription);

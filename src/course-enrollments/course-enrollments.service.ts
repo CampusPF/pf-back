@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -28,13 +30,29 @@ export class CourseEnrollmentsService {
    * alumno+curso, la reactivamos en vez de crear una fila nueva — la
    * restricción @Unique(['student','course']) no permite dos filas para el
    * mismo par, sin importar el estado.
+   *
+   * `allowPaid`: por defecto false. Un curso con `priceInCents > 0` NO se
+   * puede inscribir por esta vía (responde 402): tiene que pasar por
+   * POST /payments/create-intent y la inscripción la crea el webhook de
+   * Stripe, que es el único que llama esto con `allowPaid: true`.
    */
-  async create(dto: CreateCourseEnrollmentDto, studentId: string): Promise<CourseEnrollment> {
+  async create(
+    dto: CreateCourseEnrollmentDto,
+    studentId: string,
+    { allowPaid = false }: { allowPaid?: boolean } = {},
+  ): Promise<CourseEnrollment> {
     const course = await this.coursesRepository.findOne({
       where: { id: dto.courseId },
     });
     if (!course) {
       throw new NotFoundException(`Curso con id ${dto.courseId} no encontrado`);
+    }
+
+    if (course.priceInCents > 0 && !allowPaid) {
+      throw new HttpException(
+        'Este curso es pago. Iniciá el pago con POST /payments/create-intent.',
+        HttpStatus.PAYMENT_REQUIRED,
+      );
     }
 
     const student = await this.usersRepository.findOne({
@@ -59,6 +77,14 @@ export class CourseEnrollmentsService {
 
     const enrollment = this.enrollmentsRepository.create({ student, course });
     return this.enrollmentsRepository.save(enrollment);
+  }
+
+  /** ¿El alumno tiene una inscripción ACTIVA a este curso? */
+  async hasActiveEnrollment(studentId: string, courseId: string): Promise<boolean> {
+    const count = await this.enrollmentsRepository.count({
+      where: { student: { id: studentId }, course: { id: courseId }, isActive: true },
+    });
+    return count > 0;
   }
 
   async findAll(includeInactive = false): Promise<CourseEnrollment[]> {

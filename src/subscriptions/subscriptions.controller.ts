@@ -1,21 +1,20 @@
-import { Controller, Get, Post, Body, Param, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
-import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '../users/entities/user.entity';
 
+/**
+ * Alta de suscripción: ya NO se hace acá. Contratar un plan pasa por
+ * POST /payments/create-intent (Stripe) y la suscripción la activa el webhook
+ * payment_intent.succeeded. Este controller solo expone consulta y baja.
+ */
 @Controller('subscriptions')
 @UseGuards(JwtAuthGuard)
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) { }
-
-  @Post()
-  subscribe(@CurrentUser() user: { id: string }, @Body() dto: CreateSubscriptionDto) {
-    return this.subscriptionsService.subscribe(user.id, dto);
-  }
 
   @Get('me')
   findMine(@CurrentUser() user: { id: string }) {

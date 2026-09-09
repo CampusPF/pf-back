@@ -36,13 +36,21 @@ export class CourseEnrollmentsController {
   constructor(private readonly courseEnrollmentsService: CourseEnrollmentsService) { }
 
   @Post()
-  @ApiOperation({ summary: 'Inscribirme a un curso' })
+  @ApiOperation({
+    summary: 'Inscribirme a un curso GRATIS',
+    description:
+      'Solo cursos con priceInCents = 0. Un curso pago responde 402: hay que ' +
+      'pagarlo con POST /payments/create-intent y la inscripción la crea el webhook.',
+  })
   @ApiResponse({ status: 201, description: 'Inscripción creada correctamente' })
+  @ApiResponse({ status: 402, description: 'El curso es pago: usá /payments/create-intent' })
   @ApiResponse({ status: 409, description: 'Ya estás inscripto en este curso' })
   create(
     @Body() createCourseEnrollmentDto: CreateCourseEnrollmentDto,
     @CurrentUser('id') studentId: string,
   ) {
+    // Sin opts → allowPaid:false. La inscripción de un curso pago solo la
+    // puede crear PaymentsService desde el webhook.
     return this.courseEnrollmentsService.create(createCourseEnrollmentDto, studentId);
   }
 

@@ -38,6 +38,8 @@ export class CoursesService {
       description: dto.description,
       difficulty: dto.difficulty,
       imageUrl: dto.imageUrl,
+      priceInCents: dto.priceInCents ?? 0,
+      currency: dto.currency ?? 'usd',
       category,
       instructor,
     });
@@ -84,6 +86,8 @@ export class CoursesService {
       description: dto.description ?? course.description,
       difficulty: dto.difficulty ?? course.difficulty,
       imageUrl: dto.imageUrl ?? course.imageUrl,
+      priceInCents: dto.priceInCents ?? course.priceInCents,
+      currency: dto.currency ?? course.currency,
     });
 
     return this.coursesRepository.save(course);
