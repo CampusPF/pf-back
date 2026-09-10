@@ -9,11 +9,12 @@ config(); // carga las variables del .env
  *
  * Apunta a `dist/`, así que hay que compilar antes de generar o correr
  * migraciones: `npm run build && npm run migration:generate -- src/migrations/NombreDeLaMigracion`
+ * (el script `migration:generate` ya hace el build por vos).
  *
- * TODO(seguridad): no hay ninguna migración generada todavía. Antes del
- * primer deploy a producción hay que generar la migración inicial contra el
- * esquema actual y correrla (`npm run migration:run`), porque en producción
- * synchronize queda en false y las tablas no se crean solas.
+ * `synchronize: false` acá y TAMBIÉN en app.module.ts, en todos los entornos:
+ * las migraciones son la única fuente de verdad del esquema. Todo cambio de
+ * entidad va acompañado de su migración, y cualquier base — la de desarrollo
+ * incluida — se pone al día con `npm run migration:run`.
  */
 export const AppDataSource = new DataSource({
     type: 'postgres',

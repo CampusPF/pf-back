@@ -7,6 +7,8 @@ import {
     HttpCode,
     HttpStatus,
     Logger,
+    Param,
+    BadRequestException,
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -44,6 +46,33 @@ export class PaymentsController {
         @Body() dto: CreateIntentDto,
     ) {
         return this.paymentsService.createIntent(userId, dto);
+    }
+
+    /**
+     * El front lo llama al volver del checkout, con el `payment_intent` que
+     * Stripe agrega a la return_url. Activa el acceso si Stripe confirma el
+     * cobro, sin depender de que el webhook llegue. Ver
+     * PaymentsService.syncPayment.
+     *
+     * Requiere JWT (guard global): sólo se puede sincronizar un pago propio.
+     */
+    @Post(':intentId/sync')
+    @HttpCode(HttpStatus.OK)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Sincronizar un pago propio consultando a Stripe' })
+    @ApiResponse({ status: 200, description: '{ status, stripeStatus }' })
+    @ApiResponse({ status: 400, description: 'Id de PaymentIntent inválido' })
+    @ApiResponse({ status: 404, description: 'No existe, o no es tuyo' })
+    syncPayment(
+        @Param('intentId') intentId: string,
+        @CurrentUser('id') userId: string,
+    ) {
+        // Formato de Stripe: `pi_` + alfanumérico. Filtrar antes evita mandar
+        // basura a la API de Stripe y gastar el rate limit.
+        if (!/^pi_[A-Za-z0-9]{8,}$/.test(intentId)) {
+            throw new BadRequestException('Id de PaymentIntent inválido');
+        }
+        return this.paymentsService.syncPayment(intentId, userId);
     }
 
     /**

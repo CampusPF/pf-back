@@ -50,9 +50,16 @@ import { HealthModule } from './health/health.module';
           ? { rejectUnauthorized: false }
           : false,
         autoLoadEntities: true,
-        // NUNCA synchronize en producción: puede borrar columnas/tablas al
-        // detectar drift. En prod mandan las migraciones (npm run migration:run).
-        synchronize: config.get<string>('NODE_ENV') !== 'production',
+        /* synchronize SIEMPRE en false, también en desarrollo. Las migraciones
+           son la única fuente de verdad del esquema (npm run migration:run).
+
+           Antes esto era `NODE_ENV !== 'production'`, y el problema no es sólo
+           que synchronize pueda borrar columnas al detectar drift: es que
+           `migration:generate` compara ENTIDADES contra la BASE. Si synchronize
+           ya sincronizó la base de dev, no hay diferencia que detectar y se
+           genera una migración VACÍA — el cambio funciona en tu máquina y
+           nunca llega a producción. */
+        synchronize: false,
       }),
     }),
     // Rate limiting global. El ttl va en milisegundos desde throttler v5,

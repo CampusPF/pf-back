@@ -34,6 +34,65 @@ Completá el `.env` con tus credenciales de desarrollo (pedile a quien
 administre el proyecto los valores reales si no los tenés — nunca se
 comparten por chat común, usá un gestor de contraseñas o 1Password/similar).
 
+### Base de datos: siempre por migraciones
+
+`synchronize` está en `false` en todos los entornos. Después de clonar, y cada
+vez que traigas cambios de `develop`, poné la base al día:
+
+```bash
+npm run migration:run
+```
+
+Si tocás una entidad, generá su migración y commiteala junto con el cambio:
+
+```bash
+npm run migration:generate -- src/migrations/NombreDescriptivo
+npm run migration:run
+```
+
+> Ojo: `migration:generate` compara **las entidades contra la base**. Por eso
+> `synchronize` tiene que quedar en `false`: si la base se sincroniza sola, no
+> hay diferencia que detectar y se genera una migración vacía — el cambio anda
+> en tu máquina y nunca llega a producción.
+
+### Pagos: cómo se activa el acceso
+
+Hay **dos caminos independientes** que llegan a la misma activación
+(`PaymentsService.handlePaymentSucceeded`, idempotente):
+
+1. **Sync al volver del checkout** — el front llama a
+   `POST /payments/:intentId/sync` con el `payment_intent` que Stripe agrega a
+   la return_url. El back le pregunta a Stripe con la secret key y, si el cobro
+   está confirmado, activa en el acto. **Funciona sin webhook**, así que en
+   local no hace falta instalar nada.
+2. **Webhook `payment_intent.succeeded`** — Stripe → back. Es el respaldo para
+   quien paga y cierra la pestaña antes de volver a la página de éxito.
+
+Stripe no puede alcanzar tu `localhost`, así que en local sólo funciona el
+camino 1 (salvo que corras el CLI, abajo). Si alguien cierra la pestaña antes
+de volver, su `Payment` queda en `pending`. Para recuperarlo:
+
+```bash
+npm run stripe:replay -- --dry-run   # ver qué haría, sin tocar nada
+npm run stripe:replay                # reenviar
+```
+
+El script le pregunta a Stripe por cada `Payment` pendiente y **sólo** reenvía
+los que Stripe confirma como `succeeded`; los checkouts abandonados los deja
+como están. Nunca inventa un cobro. El handler del back es idempotente, así que
+correrlo dos veces no duplica nada.
+
+La alternativa oficial es el CLI de Stripe, dejándolo corriendo mientras
+probás pagos:
+
+```bash
+stripe listen --forward-to localhost:4000/payments/webhook
+```
+
+**Para producción**: hay que registrar `https://<dominio>/payments/webhook` como
+endpoint en el Dashboard de Stripe y poner ESE `whsec_` en el `.env` del
+servidor. Sin eso, en producción pasa exactamente lo mismo que en local.
+
 ## 1. Antes de empezar a trabajar en algo nuevo
 
 Siempre arrancás desde `develop` actualizada. Nunca desde una rama vieja tuya.

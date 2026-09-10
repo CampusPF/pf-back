@@ -13,6 +13,8 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -44,10 +46,39 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  /* Las rutas literales `me` van declaradas ANTES de las paramétricas `:id`:
+     Nest matchea por orden, y si `:id` viniera primero se tragaría "me" y el
+     ParseUUIDPipe devolvería un 400. */
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   getMe(@CurrentUser('id') id: string) {
-    return this.usersService.findOne(id);
+    return this.usersService.findProfile(id);
+  }
+
+  /**
+   * Datos personales del propio usuario (pantalla de configuración).
+   * No lleva assertSelfOrAdmin: el id sale del token, siempre es uno mismo.
+   * `email` y `role` no están en UpdateProfileDto, así que el ValidationPipe
+   * global los rechaza con 400 — ver el comentario del DTO.
+   */
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  updateMe(
+    @CurrentUser('id') id: string,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.usersService.updateProfile(id, dto);
+  }
+
+  /** Cambia la contraseña, o crea la primera si la cuenta es de Google. */
+  @Patch('me/password')
+  @UseGuards(JwtAuthGuard)
+  setMyPassword(
+    @CurrentUser('id') id: string,
+    @Body() dto: SetPasswordDto,
+  ) {
+    return this.usersService.setPassword(id, dto);
   }
 
   @Get(':id')

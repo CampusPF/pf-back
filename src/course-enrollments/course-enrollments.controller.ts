@@ -13,7 +13,6 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { CourseEnrollmentsService } from './course-enrollments.service';
 import { CreateCourseEnrollmentDto } from './dto/create-course-enrollment.dto';
-import { UpdateCourseEnrollmentDto } from './dto/update-course-enrollment.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -85,16 +84,15 @@ export class CourseEnrollmentsController {
     return this.courseEnrollmentsService.findOneForUser(id, user);
   }
 
-  @Patch(':id')
-  @ApiOperation({ summary: 'Actualizar el progreso de una inscripción propia' })
-  @ApiResponse({ status: 403, description: 'Esa inscripción no te pertenece' })
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateCourseEnrollmentDto: UpdateCourseEnrollmentDto,
-    @CurrentUser() user: { id: string; role: UserRole },
-  ) {
-    return this.courseEnrollmentsService.update(id, updateCourseEnrollmentDto, user);
-  }
+  /* Se quitó `PATCH /course-enrollments/:id`. Sus dos únicos campos eran
+     `progressPercent` y `completedAt`, y ahora los DERIVA el back: los
+     recalcula LessonProgressService cada vez que se marca, desmarca o borra
+     una lección (ver recalculateEnrollmentProgress).
+
+     Dejar el endpoint significaba que cualquier cliente podía escribirse el
+     porcentaje que quisiera y pisar el valor real. La forma de mover el
+     progreso es completar lecciones. Cancelar y reactivar siguen teniendo sus
+     propios endpoints, acá abajo. */
 
   @Patch(':id/restore')
   @ApiOperation({ summary: 'Reactivar una inscripción propia previamente cancelada' })

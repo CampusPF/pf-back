@@ -9,6 +9,7 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  ConflictException,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { ConfigService } from "@nestjs/config";
@@ -96,16 +97,30 @@ export class AuthController {
       .split(",")[0]
       .trim();
 
+    // `state` es el ?flow=login|register que mandó el front (ver
+    // GoogleAuthGuard). Google lo devuelve intacto. Decide, además de la
+    // lógica del service, a qué pantalla se vuelve si algo falla.
+    const flow = req.query?.state === "register" ? "register" : "login";
+
     let result: Awaited<ReturnType<AuthService["loginWithGoogle"]>>;
     try {
-      result = await this.authService.loginWithGoogle(req.user);
+      result = await this.authService.loginWithGoogle(req.user, flow);
     } catch (error) {
       // Este endpoint es un redirect del navegador, no un fetch: si dejamos
-      // que Nest devuelva el 401 como JSON el usuario queda en una página
-      // muerta. En vez de eso lo mandamos de vuelta al login del front con
-      // un motivo, y sin dejar cookie de sesión.
-      if (error instanceof UnauthorizedException) {
-        return res.redirect(`${frontendUrl}/login?error=not_registered`);
+      // que Nest devuelva el 401/409 como JSON el usuario queda en una página
+      // muerta. En vez de eso lo mandamos de vuelta a la pantalla de la que
+      // salió con un motivo, y sin dejar cookie de sesión.
+      //   - not_registered: entró por /login pero no tiene cuenta.
+      //   - already_registered: entró por /register pero el email ya existe.
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof ConflictException
+      ) {
+        const reason =
+          error instanceof ConflictException
+            ? "already_registered"
+            : "not_registered";
+        return res.redirect(`${frontendUrl}/${flow}?error=${reason}`);
       }
       throw error;
     }

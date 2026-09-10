@@ -6,7 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { normalizeEmail } from '../common/utils/normalize-email.util';
 
 /** Código de Postgres para "unique_violation". */
@@ -17,6 +17,15 @@ interface GoogleUserPayload {
     email: string;
     name: string;
 }
+
+/**
+ * Desde qué pantalla del front arrancó el login social. Lo manda el front
+ * como `?flow=` y viaja por el `state` de OAuth (ver GoogleAuthGuard).
+ *   - 'login': "Continuar con Google" en /login. NO crea cuentas.
+ *   - 'register': "Continuar con Google" en /register. Crea la cuenta si el
+ *     email no existe; si ya existe, rebota (hay que iniciar sesión).
+ */
+export type GoogleAuthFlow = 'login' | 'register';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +45,15 @@ export class AuthService {
                 name: dto.name,
                 email: dto.email,
                 password: dto.password, // ya no se hashea acá, lo hace UsersService
+                // Los datos personales que el formulario de registro pide como
+                // obligatorios. Antes este llamado pasaba sólo los tres campos
+                // de arriba, así que birthDate/phone/address/city/country se
+                // perdían en el camino y quedaban en null para todo el mundo.
+                birthDate: dto.birthDate,
+                phone: dto.phone,
+                address: dto.address,
+                city: dto.city,
+                country: dto.country,
             });
 
             return this.buildToken(user);
@@ -70,7 +88,10 @@ export class AuthService {
         return this.buildToken(user);
     }
 
-    async loginWithGoogle(googleUser: GoogleUserPayload) {
+    async loginWithGoogle(
+        googleUser: GoogleUserPayload,
+        flow: GoogleAuthFlow = 'login',
+    ) {
         // Defensivo: GoogleStrategy ya normaliza, pero este método también se
         // podría llamar desde otro lado en el futuro sin pasar por ahí.
         const email = normalizeEmail(googleUser.email);
@@ -81,15 +102,28 @@ export class AuthService {
 
         let user = await findExisting();
 
+        if (flow === 'register') {
+            // "Continuar con Google" desde /register.
+            if (user) {
+                // Ya hay una cuenta con este email (con o sin Google
+                // vinculado): no se registra de nuevo, se lo manda al login.
+                throw new ConflictException(
+                    'Ya existe una cuenta con este email. Iniciá sesión.',
+                );
+            }
+            user = await this.createGoogleUser(googleUser, email, findExisting);
+            return this.buildToken(user);
+        }
+
+        // flow === 'login': "Continuar con Google" desde /login.
         if (!user) {
-            // Google NO registra usuarios nuevos: solo sirve para entrar o
-            // enlazar cuentas que ya existen (creadas por el formulario de
-            // registro). Si no hay ninguna cuenta con este email/googleId,
-            // se rechaza el acceso.
+            // Desde el login NO se crean cuentas: se lo manda a registrarse.
             throw new UnauthorizedException(
-                'No existe una cuenta con este email. Primero registrate en la plataforma.',
+                'No existe una cuenta con este email. Registrate primero.',
             );
-        } else if (!user.googleId) {
+        }
+
+        if (!user.googleId) {
             // Ya existía con email/password normal: vinculamos la cuenta de
             // Google. Misma carrera posible si el usuario dispara dos
             // requests casi simultáneos vinculando la cuenta por primera vez.
@@ -102,6 +136,34 @@ export class AuthService {
         }
 
         return this.buildToken(user);
+    }
+
+    /**
+     * Alta de una cuenta nueva a partir del perfil de Google (registro
+     * social). Google sólo nos da nombre y email: birthDate, phone y country
+     * quedan en null y se completan después desde el perfil. La cuenta no
+     * tiene passwordHash — sólo se entra con Google hasta que setee una.
+     */
+    private async createGoogleUser(
+        googleUser: GoogleUserPayload,
+        email: string,
+        findExisting: () => Promise<User | null>,
+    ): Promise<User> {
+        try {
+            const created = this.usersRepository.create({
+                name: googleUser.name?.trim() || email.split('@')[0],
+                email,
+                googleId: googleUser.googleId,
+                passwordHash: null,
+                role: UserRole.STUDENT,
+                status: UserStatus.ACTIVE,
+            });
+            return await this.usersRepository.save(created);
+        } catch (error) {
+            // Carrera: otro request creó la cuenta entre el findExisting y
+            // este save. Devolvemos esa en vez de un 500.
+            return this.recoverFromRaceOrRethrow(error, findExisting);
+        }
     }
 
     /**
@@ -126,11 +188,21 @@ export class AuthService {
         return existing;
     }
 
-    private buildToken(user: { id: string; email: string; role: string }) {
+    private buildToken(user: { id: string; name: string; email: string; role: string }) {
         const payload = { sub: user.id, email: user.email, role: user.role };
         return {
             access_token: this.jwtService.sign(payload),
-            user: { id: user.id, email: user.email, role: user.role },
+            // `name` va en la respuesta (no en el payload del JWT, que se
+            // mantiene mínimo a propósito): el front lo cachea al iniciar
+            // sesión y lo muestra en el saludo del dashboard sin tener que
+            // esperar a un GET /users/me. Los tres llamadores ya tienen el
+            // `name` cargado (create() y findByEmail() lo traen).
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+            },
         };
     }
 }

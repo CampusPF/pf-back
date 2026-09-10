@@ -8,7 +8,7 @@ import {
     IsInt,
     Min,
     MaxLength,
-    IsIn,
+    IsBoolean,
 } from 'class-validator';
 
 export class CreateLessonDto {
@@ -42,15 +42,10 @@ export class CreateLessonDto {
     @IsString()
     content?: string;
 
-    @ApiPropertyOptional({
-        example: 'video',
-        enum: ['video', 'text', 'quiz'],
-        description: 'Tipo de contenido de la lección',
-        default: 'video',
-    })
-    @IsOptional()
-    @IsIn(['video', 'text', 'quiz'])
-    type?: string;
+    /* Se quitó `type` ('video' | 'text' | 'quiz'): no existe esa columna en la
+       entidad y el service nunca lo guardó, así que el DTO prometía un campo
+       que la API aceptaba y descartaba en silencio. Si algún día hace falta
+       distinguir tipos de lección, va con su columna y su migración. */
 
     @ApiPropertyOptional({
         example: 1,
@@ -61,12 +56,24 @@ export class CreateLessonDto {
     @Min(1)
     order?: number;
 
+    /* Antes era `durationInSeconds`, pero la unidad que usa la UI (y ahora la
+       columna) son minutos. Se renombró en vez de convertir para que no haya
+       dos unidades dando vueltas. */
     @ApiPropertyOptional({
-        example: 300,
-        description: 'Duración estimada de la lección en segundos',
+        example: 12,
+        description: 'Duración estimada de la lección en minutos',
     })
     @IsOptional()
     @IsInt()
     @Min(0)
-    durationInSeconds?: number;
+    durationMinutes?: number;
+
+    @ApiPropertyOptional({
+        example: false,
+        description: 'Lección de muestra: visible sin comprar el curso',
+        default: false,
+    })
+    @IsOptional()
+    @IsBoolean()
+    isFree?: boolean;
 }

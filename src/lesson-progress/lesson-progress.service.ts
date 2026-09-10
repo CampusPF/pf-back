@@ -61,7 +61,10 @@ export class LessonProgressService {
       completedAt: completed ? new Date() : null,
     });
 
-    return this.lessonProgressRepository.save(progress);
+    const saved = await this.lessonProgressRepository.save(progress);
+    await this.recalculateEnrollmentProgress(enrollment.id);
+
+    return saved;
   }
 
   async findAll(): Promise<LessonProgress[]> {
@@ -130,13 +133,80 @@ export class LessonProgressService {
       completedAt: completed ? (progress.completedAt ?? new Date()) : null,
     });
 
-    return this.lessonProgressRepository.save(progress);
+    const saved = await this.lessonProgressRepository.save(progress);
+    await this.recalculateEnrollmentProgress(progress.enrollment.id);
+
+    return saved;
   }
 
   async remove(id: string, user: { id: string; role: UserRole }): Promise<void> {
     const progress = await this.findOne(id);
     this.assertOwnerOrAdmin(progress, user);
+
+    // Se guarda el id ANTES de borrar: remove() deja la entidad sin id.
+    const enrollmentId = progress.enrollment.id;
+
     await this.lessonProgressRepository.remove(progress);
+    await this.recalculateEnrollmentProgress(enrollmentId);
+  }
+
+  /**
+   * Recalcula `progressPercent` de la inscripción: lecciones activas
+   * completadas sobre el total de lecciones activas del curso.
+   *
+   * Hasta ahora NADIE lo hacía. El único que escribía esa columna era
+   * `PATCH /course-enrollments/:id`, tomando el número del body del cliente,
+   * así que completar una lección no movía el progreso del curso y el
+   * porcentaje del dashboard era lo que algún cliente hubiera mandado a mano.
+   *
+   * Va acá y no en un EntitySubscriber de TypeORM (que corre dentro de la
+   * transacción del save() y es invisible al leer el service) ni inyectando
+   * CourseEnrollmentsService (que no hace falta: este módulo ya tiene el repo
+   * de CourseEnrollment para validar titularidad, así que no se agrega
+   * ninguna dependencia entre módulos).
+   *
+   * Son dos COUNT fijos, sin N+1 y sin traer una sola lección a memoria.
+   */
+  private async recalculateEnrollmentProgress(enrollmentId: string): Promise<void> {
+    const totalRow = await this.lessonsRepository
+      .createQueryBuilder('lesson')
+      .innerJoin('lesson.module', 'module')
+      .innerJoin('module.course', 'course')
+      .innerJoin(
+        'course.enrollments',
+        'enrollment',
+        'enrollment.id = :enrollmentId',
+        { enrollmentId },
+      )
+      .where('lesson.isActive = true')
+      .andWhere('module.isActive = true')
+      .select('COUNT(lesson.id)', 'total')
+      .getRawOne<{ total: string }>();
+
+    const doneRow = await this.lessonProgressRepository
+      .createQueryBuilder('lp')
+      .innerJoin('lp.lesson', 'lesson')
+      .innerJoin('lesson.module', 'module')
+      .where('lp.enrollment = :enrollmentId', { enrollmentId })
+      .andWhere('lp.completed = true')
+      .andWhere('lesson.isActive = true')
+      .andWhere('module.isActive = true')
+      .select('COUNT(lp.id)', 'done')
+      .getRawOne<{ done: string }>();
+
+    const total = Number(totalRow?.total ?? 0);
+    const done = Number(doneRow?.done ?? 0);
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+
+    await this.enrollmentsRepository.update(
+      { id: enrollmentId },
+      {
+        progressPercent: percent,
+        // Se limpia si vuelve a bajar de 100 (una lección desmarcada, o una
+        // lección nueva agregada al curso): el curso deja de estar terminado.
+        completedAt: percent >= 100 ? new Date() : null,
+      },
+    );
   }
 
   /**
