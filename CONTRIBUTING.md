@@ -36,11 +36,24 @@ comparten por chat común, usá un gestor de contraseñas o 1Password/similar).
 
 ### Base de datos: siempre por migraciones
 
-`synchronize` está en `false` en todos los entornos. Después de clonar, y cada
-vez que traigas cambios de `develop`, poné la base al día:
+`synchronize` está en `false` en todos los entornos. Después de clonar:
 
 ```bash
-npm run migration:run
+npm run build
+npm run db:migrate     # crea todo el schema desde las migraciones
+npm run seed           # (opcional) cursos de demo
+```
+
+Cada vez que traigas cambios de `develop`, `npm run db:migrate` para aplicar
+lo que falte.
+
+Si tu base ya existía (la armó `synchronize` en su momento) y `db:migrate`
+falla con "ya existe", es una base en dev: reseteala y arrancá limpio.
+
+```bash
+npm run db:reset -- --force
+npm run db:migrate
+npm run seed
 ```
 
 Si tocás una entidad, generá su migración y commiteala junto con el cambio:
@@ -51,9 +64,14 @@ npm run migration:run
 ```
 
 > Ojo: `migration:generate` compara **las entidades contra la base**. Por eso
-> `synchronize` tiene que quedar en `false`: si la base se sincroniza sola, no
-> hay diferencia que detectar y se genera una migración vacía — el cambio anda
-> en tu máquina y nunca llega a producción.
+> `synchronize` tiene que quedar en `false` — y por eso la base contra la que
+> generás tiene que estar **al día por migraciones**, no armada por
+> `synchronize`. Si te sincronizás la base sola, `migration:generate` no ve
+> diferencia y genera una migración vacía; el cambio anda en tu máquina y
+> nunca llega a producción. (La `InitialSchema` original tenía justo ese
+> problema: se generó contra una base ya sincronizada, así que le faltaban la
+> extensión `uuid-ossp`, los tipos ENUM y varias columnas `isActive`, y nunca
+> pudo correr sobre una base limpia. Está reescrita, consolidada.)
 
 ### Deploy: correr migraciones en el servidor
 
