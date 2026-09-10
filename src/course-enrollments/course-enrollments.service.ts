@@ -12,7 +12,6 @@ import { CourseEnrollment } from './entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateCourseEnrollmentDto } from './dto/create-course-enrollment.dto';
-import { UpdateCourseEnrollmentDto } from './dto/update-course-enrollment.dto';
 
 @Injectable()
 export class CourseEnrollmentsService {
@@ -131,21 +130,10 @@ export class CourseEnrollmentsService {
     return enrollment;
   }
 
-  async update(
-    id: string,
-    dto: UpdateCourseEnrollmentDto,
-    user: { id: string; role: UserRole },
-  ): Promise<CourseEnrollment> {
-    const enrollment = await this.findOne(id);
-    this.assertOwnerOrAdmin(enrollment, user);
-
-    Object.assign(enrollment, {
-      progressPercent: dto.progressPercent ?? enrollment.progressPercent,
-      completedAt: dto.completedAt ? new Date(dto.completedAt) : enrollment.completedAt,
-    });
-
-    return this.enrollmentsRepository.save(enrollment);
-  }
+  /* Se quitó `update()` junto con su endpoint y su DTO: escribía
+     `progressPercent` y `completedAt` a partir del body del cliente, y esos
+     dos campos ahora los deriva el back en
+     LessonProgressService.recalculateEnrollmentProgress. */
 
   /**
    * Cancelar es un borrado lógico: LessonProgress de esta inscripción no se

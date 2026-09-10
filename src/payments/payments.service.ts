@@ -6,6 +6,14 @@ import {
     NotFoundException,
     InternalServerErrorException,
 } from '@nestjs/common';
+
+/** Respuesta de POST /payments/:intentId/sync. */
+export interface PaymentSyncResult {
+    /** Estado del Payment local DESPUÉS de sincronizar. */
+    status: PaymentStatus;
+    /** Estado del PaymentIntent según Stripe (ej. `succeeded`, `processing`). */
+    stripeStatus: Stripe.PaymentIntent.Status | null;
+}
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import Stripe from 'stripe';
@@ -156,8 +164,62 @@ export class PaymentsService {
     }
 
     /**
-     * Único lugar que confirma un pago. Lo llama el webhook cuando llega
-     * `payment_intent.succeeded`.
+     * Sincroniza un pago propio consultando a Stripe directamente. Lo llama el
+     * front al volver del checkout (POST /payments/:intentId/sync).
+     *
+     * Existe porque el webhook no alcanza solo: en desarrollo Stripe no puede
+     * llegar a `localhost`, y en producción un webhook puede demorarse o
+     * fallar. Sin esto el usuario paga, Stripe cobra, y el acceso nunca se
+     * activa. Con esto hay DOS caminos independientes a la misma activación:
+     *
+     *   - el webhook (Stripe → back), que cubre al que cierra la pestaña antes
+     *     de volver;
+     *   - este sync (front → back → Stripe), que cubre al que vuelve pero cuyo
+     *     webhook no llegó.
+     *
+     * Es seguro porque el cliente no aporta ningún dato de verdad: sólo dice
+     * qué intent mirar, y el estado lo obtiene el SERVIDOR preguntándole a
+     * Stripe con la secret key. Después reusa handlePaymentSucceeded, que ya
+     * es idempotente y valida el monto — si el webhook llega también, no
+     * duplica nada.
+     */
+    async syncPayment(intentId: string, userId: string): Promise<PaymentSyncResult> {
+        const payment = await this.paymentsRepository.findOne({
+            where: { stripePaymentIntentId: intentId },
+            relations: { user: true },
+        });
+
+        // Mismo 404 para "no existe" y "es de otro usuario": no le confirmamos
+        // a nadie que un intent ajeno existe.
+        if (!payment || payment.user.id !== userId) {
+            throw new NotFoundException('Pago no encontrado');
+        }
+
+        if (payment.status !== PaymentStatus.PENDING) {
+            return { status: payment.status, stripeStatus: null };
+        }
+
+        const intent = await this.stripeService.stripe.paymentIntents.retrieve(intentId);
+
+        if (intent.status === 'succeeded') {
+            await this.handlePaymentSucceeded(intent);
+
+            const updated = await this.paymentsRepository.findOne({
+                where: { id: payment.id },
+            });
+            return {
+                status: updated?.status ?? payment.status,
+                stripeStatus: intent.status,
+            };
+        }
+
+        return { status: payment.status, stripeStatus: intent.status };
+    }
+
+    /**
+     * Único lugar que confirma un pago. Lo llaman el webhook cuando llega
+     * `payment_intent.succeeded` y syncPayment cuando el usuario vuelve del
+     * checkout.
      *
      * Idempotente por diseño (Stripe reintenta el webhook):
      *  - si no hay Payment local para ese intent → no hace nada

@@ -24,6 +24,20 @@ export class Lesson {
     @Column({ name: 'order_index' })
     order: number;
 
+    /**
+     * Duración estimada en MINUTOS. Es la unidad que muestra la UI ("12 min",
+     * "1h 3min") y la que se suma para las horas estudiadas del dashboard.
+     *
+     * Default 0 en vez de nullable: una lección sin duración cargada suma
+     * cero, y `SUM()` no tiene que lidiar con nulos.
+     */
+    @Column({ name: 'duration_minutes', type: 'int', default: 0 })
+    durationMinutes: number;
+
+    /** Lección de muestra: se puede ver sin comprar el curso ni suscribirse. */
+    @Column({ name: 'is_free', default: false })
+    isFree: boolean;
+
     @Column({ default: true })
     isActive: boolean;
 

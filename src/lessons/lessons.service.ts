@@ -36,6 +36,13 @@ export class LessonsService {
       title: dto.title,
       order,
       module: courseModule,
+      // Hasta acá el create sólo guardaba title/order/module y descartaba en
+      // silencio todo lo demás que el DTO declaraba, así que no había forma de
+      // cargar el contenido de una lección por la API.
+      content: dto.content,
+      videoUrl: dto.videoUrl,
+      durationMinutes: dto.durationMinutes ?? 0,
+      isFree: dto.isFree ?? false,
     });
 
     return this.lessonsRepository.save(lesson);
@@ -85,12 +92,22 @@ export class LessonsService {
     return lesson;
   }
 
+  /**
+   * Depende de que findOne() traiga content/videoUrl con su addSelect: son
+   * `select:false`, así que si esto pasara a usar un findOne() de repositorio
+   * pelado, el save() de abajo las guardaría como undefined y BORRARÍA el
+   * contenido de la lección sin que nadie lo pida.
+   */
   async update(id: string, dto: UpdateLessonDto): Promise<Lesson> {
     const lesson = await this.findOne(id);
 
     Object.assign(lesson, {
       title: dto.title ?? lesson.title,
       order: dto.order ?? lesson.order,
+      content: dto.content ?? lesson.content,
+      videoUrl: dto.videoUrl ?? lesson.videoUrl,
+      durationMinutes: dto.durationMinutes ?? lesson.durationMinutes,
+      isFree: dto.isFree ?? lesson.isFree,
     });
 
     return this.lessonsRepository.save(lesson);

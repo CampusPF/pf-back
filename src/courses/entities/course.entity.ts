@@ -18,6 +18,12 @@ export class Course {
     @Column()
     title: string;
 
+    // Identificador legible para URLs (/cursos/:slug). El front lo usa para
+    // resolver qué curso es antes de pedir el detalle por id. Se deriva del
+    // título al crear el curso; ver CoursesService.create.
+    @Column({ unique: true })
+    slug: string;
+
     @Column({ type: 'text', nullable: true })
     description: string;
 

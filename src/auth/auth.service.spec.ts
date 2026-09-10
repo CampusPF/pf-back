@@ -230,6 +230,45 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
     expect(viaGoogle.user.id).toBe(registered.user.id);
   });
 
+  it("registro con Google (flow 'register') sin cuenta previa → crea el usuario y devuelve token", async () => {
+    const result = await authService.loginWithGoogle(
+      {
+        googleId: 'google-id-nuevo',
+        email: 'nuevo@test.com',
+        name: 'Nuevo Usuario',
+      },
+      'register',
+    );
+
+    expect(result.access_token).toBeDefined();
+    expect(result.user.email).toBe('nuevo@test.com');
+
+    const created = await usersService.findByEmail('nuevo@test.com');
+    expect(created?.googleId).toBe('google-id-nuevo');
+    // Cuenta social pura: sin contraseña hasta que setee una.
+    expect(created?.passwordHash ?? null).toBeNull();
+  });
+
+  it("registro con Google (flow 'register') con email ya registrado → ConflictException, no crea otra cuenta", async () => {
+    await authService.register(
+      registerPayload({ name: 'Ya Existe', email: 'yaexiste@test.com' }) as any,
+    );
+
+    await expect(
+      authService.loginWithGoogle(
+        {
+          googleId: 'google-id-yaexiste',
+          email: 'yaexiste@test.com',
+          name: 'Ya Existe',
+        },
+        'register',
+      ),
+    ).rejects.toThrow('Ya existe una cuenta con este email');
+
+    const all = await usersService.findAll();
+    expect(all.filter((u) => u.email === 'yaexiste@test.com')).toHaveLength(1);
+  });
+
   // Bonus: mismo tipo de carrera que en loginWithGoogle, pero en el flujo de
   // registro por formulario (agregado junto con el fix, no pedido
   // explícitamente en la consigna original, pero es el mismo bug en el

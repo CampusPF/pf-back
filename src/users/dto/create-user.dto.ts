@@ -1,8 +1,18 @@
-import { IsEmail, IsString, IsOptional, IsEnum, MinLength } from 'class-validator';
+import {
+    IsEmail,
+    IsString,
+    IsOptional,
+    IsEnum,
+    MinLength,
+    MaxLength,
+    IsDateString,
+    Matches,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../entities/user.entity';
 import { normalizeEmail } from '../../common/utils/normalize-email.util';
+import { IsAdult } from '../../auth/decorators/is-adult.decorator';
 
 export class CreateUserDto {
     @ApiProperty({
@@ -43,4 +53,49 @@ export class CreateUserDto {
     @IsOptional()
     @IsEnum(UserRole)
     role?: UserRole;
+
+    /* Datos personales. Son opcionales acá (el alta por admin y el alta social
+       con Google no los tienen) pero obligatorios en RegisterDto, que es el
+       camino del formulario de registro. Antes no estaban en este DTO y por
+       eso AuthService.register los descartaba silenciosamente. */
+
+    @ApiPropertyOptional({
+        description: 'Fecha de nacimiento (ISO 8601)',
+        example: '1995-08-23',
+    })
+    @IsOptional()
+    @IsDateString(
+        {},
+        { message: 'La fecha de nacimiento debe tener formato válido (YYYY-MM-DD)' },
+    )
+    @IsAdult()
+    birthDate?: string;
+
+    @ApiPropertyOptional({
+        description: 'Teléfono con código de país',
+        example: '+543511234567',
+    })
+    @IsOptional()
+    @Matches(/^\+\d{8,15}$/, {
+        message: 'El teléfono debe empezar con "+" y tener entre 8 y 15 dígitos',
+    })
+    phone?: string;
+
+    @ApiPropertyOptional({ description: 'Dirección', maxLength: 200 })
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    address?: string;
+
+    @ApiPropertyOptional({ description: 'Ciudad', maxLength: 100 })
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    city?: string;
+
+    @ApiPropertyOptional({ description: 'País', maxLength: 100 })
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    country?: string;
 }
