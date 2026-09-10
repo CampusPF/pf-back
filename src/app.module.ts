@@ -12,7 +12,7 @@ import { CourseEnrollmentsModule } from './course-enrollments/course-enrollments
 import { AuthModule } from './auth/auth.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { AiTutorModule } from './aiTutor/aiTutor.module';
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, OnApplicationBootstrap } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
@@ -21,6 +21,10 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { UserOrIpThrottlerGuard } from './common/guards/user-or-ip-throttler.guard';
 import { HealthModule } from './health/health.module';
+import { FileUploadModule } from './file-upload/file-upload.module';
+import { CategoriesService } from './categories/categories.service';
+
+
 
 
 
@@ -79,7 +83,8 @@ import { HealthModule } from './health/health.module';
     LessonProgressModule,
     AuthModule,
     SubscriptionsModule,
-    AiTutorModule
+    AiTutorModule,
+    FileUploadModule
   ],
   controllers: [AppController],
   providers: [
@@ -103,8 +108,22 @@ import { HealthModule } from './health/health.module';
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
-export class AppModule implements NestModule {
+export class AppModule implements NestModule, OnApplicationBootstrap {
+  constructor(
+    private readonly categoriesService: CategoriesService
+    // private readonly productsService: ProductsService,
+  ) { }
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(RequestLoggerMiddleware).forRoutes('*');
+  }
+
+  async onApplicationBootstrap() {
+    //* seeder Categories => servicio Categories addCategories
+    // await this.categoriesService.addCategoryService();
+    console.log('Categorías insertadas correctamente ✅');
+
+    //* seeder Productos => servicio Productos addProducts
+    // await this.productsService.addProductsService();
+    console.log('Productos insertados correctamente ✅');
   }
 }
