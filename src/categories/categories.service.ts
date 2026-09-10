@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Category } from './entities/category.entity';
+import { CategoriesRepository } from './categories.repository';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
@@ -14,6 +15,7 @@ export class CategoriesService {
   constructor(
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
+    private readonly customRepo: CategoriesRepository,
   ) { }
 
   async create(dto: CreateCategoryDto): Promise<Category> {
@@ -81,4 +83,8 @@ export class CategoriesService {
     category.isActive = true;
     return this.categoriesRepository.save(category);
   }
+  addCategoryService() {
+    return this.customRepo.addCategoryRepository();
+  }
+
 }
