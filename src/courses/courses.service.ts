@@ -6,6 +6,7 @@ import { Category } from '../categories/entities/category.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import { generateUniqueSlug } from './utils/slug.util';
 
 @Injectable()
 export class CoursesService {
@@ -33,8 +34,18 @@ export class CoursesService {
       throw new NotFoundException(`Instructor con id ${instructorId} no encontrado`);
     }
 
+    // El slug sale del título salvo que venga uno explícito en el dto. En
+    // ambos casos se slugifica y, si ya existe, se le agrega sufijo numérico
+    // (dos cursos con el mismo título son válidos).
+    const slug = await generateUniqueSlug(
+      dto.slug ?? dto.title,
+      async (candidate) =>
+        (await this.coursesRepository.countBy({ slug: candidate })) > 0,
+    );
+
     const course = this.coursesRepository.create({
       title: dto.title,
+      slug,
       description: dto.description,
       difficulty: dto.difficulty,
       imageUrl: dto.imageUrl,

@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { Course, CourseDifficulty } from '../../courses/entities/course.entity';
 import { Category } from '../../categories/entities/category.entity';
 import { User, UserRole, UserStatus } from '../../users/entities/user.entity';
+import { generateUniqueSlug } from '../../courses/utils/slug.util';
 
 export async function seedCourses(dataSource: DataSource) {
   const categoryRepo = dataSource.getRepository(Category);
@@ -37,7 +38,15 @@ export async function seedCourses(dataSource: DataSource) {
   }
 
   // --- 3. Cursos ---
-  const coursesData = [
+  const coursesData: Array<{
+    title: string;
+    description: string;
+    difficulty: CourseDifficulty;
+    imageUrl: string;
+    categoryName: string;
+    priceInCents?: number;
+    currency?: string;
+  }> = [
     {
       title: 'Introducción a NestJS',
       description: 'Aprendé a construir APIs REST robustas con NestJS, TypeORM y PostgreSQL desde cero.',
@@ -51,6 +60,9 @@ export async function seedCourses(dataSource: DataSource) {
       difficulty: CourseDifficulty.ADVANCED,
       imageUrl: 'https://cdn.campuslite.com/covers/react-avanzado.png',
       categoryName: 'Programación',
+      // Curso premium de ejemplo para probar el checkout individual con Stripe.
+      priceInCents: 4999,
+      currency: 'usd',
     },
     {
       title: 'Fundamentos de UX/UI',
@@ -88,12 +100,22 @@ export async function seedCourses(dataSource: DataSource) {
 
     const category = categories.find((c) => c.name === data.categoryName);
 
+    // El seed inserta con el repository directo, así que el slug hay que
+    // generarlo acá igual que en CoursesService.create.
+    const slug = await generateUniqueSlug(
+      data.title,
+      async (candidate) => (await courseRepo.countBy({ slug: candidate })) > 0,
+    );
+
     await courseRepo.save(
       courseRepo.create({
         title: data.title,
+        slug,
         description: data.description,
         difficulty: data.difficulty,
         imageUrl: data.imageUrl,
+        priceInCents: data.priceInCents ?? 0,
+        currency: data.currency ?? 'usd',
         category,
         instructor,
       }),

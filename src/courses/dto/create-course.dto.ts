@@ -29,6 +29,17 @@ export class CreateCourseDto {
     description?: string;
 
     @ApiPropertyOptional({
+        example: 'react-avanzado-con-typescript',
+        description:
+            'Slug para URLs. Opcional: si no viene se deriva del título. Se ' +
+            'slugifica igual y, si choca con otro, se le agrega un sufijo numérico.',
+    })
+    @IsOptional()
+    @IsString()
+    @MaxLength(160)
+    slug?: string;
+
+    @ApiPropertyOptional({
         enum: CourseDifficulty,
         example: CourseDifficulty.BEGINNER,
         description: 'Nivel de dificultad del curso',
