@@ -90,8 +90,24 @@ async function main() {
 
   await client.query('DROP SCHEMA public CASCADE');
   await client.query('CREATE SCHEMA public');
-  // Permisos por defecto que espera Postgres en un schema public nuevo.
-  await client.query('GRANT ALL ON SCHEMA public TO public');
+
+  // Grants por defecto. Los dos primeros son el estándar de Postgres; los
+  // roles anon / authenticated / service_role son de Supabase y hacen falta
+  // para que el editor de tablas del dashboard siga funcionando (la app se
+  // conecta como `postgres` y no los usa, pero no cuesta nada dejarlos).
+  const grants = [
+    'GRANT ALL ON SCHEMA public TO public',
+    'GRANT ALL ON SCHEMA public TO postgres',
+    'GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role',
+  ];
+  for (const g of grants) {
+    try {
+      await client.query(g);
+    } catch (e) {
+      // Los roles de Supabase no existen en un Postgres común: ignorar.
+      if (!/role .* does not exist/i.test(e.message)) throw e;
+    }
+  }
 
   console.log('\nSchema public recreado, vacío.');
   console.log('Ahora corré:  node scripts/db-migrate.js');
