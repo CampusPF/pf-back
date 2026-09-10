@@ -5,7 +5,6 @@ import {
     MaxLength,
     Matches,
     IsDateString,
-    IsPhoneNumber,
     IsOptional,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
@@ -83,10 +82,12 @@ export class RegisterDto {
 
     @ApiProperty({
         description: 'Número de teléfono (con código de país)',
-        example: '+5493511234567',
+        example: '+543511234567',
         required: true,
     })
-    @IsPhoneNumber(undefined, { message: 'El teléfono debe ser un número válido, incluyendo código de país' })
+    @Matches(/^\+\d{8,15}$/, {
+        message: 'El teléfono debe empezar con "+" y tener entre 8 y 15 dígitos',
+    })
     phone: string;
 
     @ApiPropertyOptional({
