@@ -55,6 +55,34 @@ npm run migration:run
 > hay diferencia que detectar y se genera una migración vacía — el cambio anda
 > en tu máquina y nunca llega a producción.
 
+### Deploy: correr migraciones en el servidor
+
+`npm run migration:run` usa `ts-node`, que es devDependency y puede no estar en
+producción. Para el deploy hay un runner en JS plano que sólo necesita
+`typeorm` + `pg`:
+
+```bash
+npm run db:migrate     # aplica las migraciones pendientes contra la base del entorno
+```
+
+Necesita `dist/` compilado (en el servidor el build ya corrió). Conexión por
+`DATABASE_URL` o por `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_NAME`.
+
+En **Render**: ponelo como **Pre-Deploy Command** del Web Service
+(`npm run db:migrate`). Corre después del build y antes de que la versión nueva
+tome tráfico; si falla, el deploy se aborta y la versión anterior sigue viva.
+
+Si la base de un entorno quedó inconsistente (schema creado por `synchronize`,
+migraciones nunca corridas), `db:migrate` va a fallar con "ya existe". Para
+resetearla y arrancar limpio:
+
+```bash
+npm run db:reset -- --dry-run   # muestra qué tablas y filas hay
+npm run db:reset -- --force     # DROP SCHEMA public + recrea, vacío
+npm run db:migrate              # reconstruye todo el schema desde las migraciones
+npm run seed                    # (opcional) datos de demo
+```
+
 ### Pagos: cómo se activa el acceso
 
 Hay **dos caminos independientes** que llegan a la misma activación

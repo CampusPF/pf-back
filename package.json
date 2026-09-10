@@ -17,6 +17,8 @@
     "prestart:dev": "node scripts/free-port.js",
     "start:dev": "nest start --watch",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeders/run-seed.ts",
+    "db:migrate": "node scripts/db-migrate.js",
+    "db:reset": "node scripts/db-reset.js",
     "stripe:replay": "node scripts/stripe-replay.js",
     "prestart:debug": "node scripts/free-port.js",
     "start:debug": "nest start --debug --watch",
