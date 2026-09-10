@@ -36,11 +36,24 @@ comparten por chat común, usá un gestor de contraseñas o 1Password/similar).
 
 ### Base de datos: siempre por migraciones
 
-`synchronize` está en `false` en todos los entornos. Después de clonar, y cada
-vez que traigas cambios de `develop`, poné la base al día:
+`synchronize` está en `false` en todos los entornos. Después de clonar:
 
 ```bash
-npm run migration:run
+npm run build
+npm run db:migrate     # crea todo el schema desde las migraciones
+npm run seed           # (opcional) cursos de demo
+```
+
+Cada vez que traigas cambios de `develop`, `npm run db:migrate` para aplicar
+lo que falte.
+
+Si tu base ya existía (la armó `synchronize` en su momento) y `db:migrate`
+falla con "ya existe", es una base en dev: reseteala y arrancá limpio.
+
+```bash
+npm run db:reset -- --force
+npm run db:migrate
+npm run seed
 ```
 
 Si tocás una entidad, generá su migración y commiteala junto con el cambio:
@@ -51,9 +64,42 @@ npm run migration:run
 ```
 
 > Ojo: `migration:generate` compara **las entidades contra la base**. Por eso
-> `synchronize` tiene que quedar en `false`: si la base se sincroniza sola, no
-> hay diferencia que detectar y se genera una migración vacía — el cambio anda
-> en tu máquina y nunca llega a producción.
+> `synchronize` tiene que quedar en `false` — y por eso la base contra la que
+> generás tiene que estar **al día por migraciones**, no armada por
+> `synchronize`. Si te sincronizás la base sola, `migration:generate` no ve
+> diferencia y genera una migración vacía; el cambio anda en tu máquina y
+> nunca llega a producción. (La `InitialSchema` original tenía justo ese
+> problema: se generó contra una base ya sincronizada, así que le faltaban la
+> extensión `uuid-ossp`, los tipos ENUM y varias columnas `isActive`, y nunca
+> pudo correr sobre una base limpia. Está reescrita, consolidada.)
+
+### Deploy: correr migraciones en el servidor
+
+`npm run migration:run` usa `ts-node`, que es devDependency y puede no estar en
+producción. Para el deploy hay un runner en JS plano que sólo necesita
+`typeorm` + `pg`:
+
+```bash
+npm run db:migrate     # aplica las migraciones pendientes contra la base del entorno
+```
+
+Necesita `dist/` compilado (en el servidor el build ya corrió). Conexión por
+`DATABASE_URL` o por `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_NAME`.
+
+En **Render**: ponelo como **Pre-Deploy Command** del Web Service
+(`npm run db:migrate`). Corre después del build y antes de que la versión nueva
+tome tráfico; si falla, el deploy se aborta y la versión anterior sigue viva.
+
+Si la base de un entorno quedó inconsistente (schema creado por `synchronize`,
+migraciones nunca corridas), `db:migrate` va a fallar con "ya existe". Para
+resetearla y arrancar limpio:
+
+```bash
+npm run db:reset -- --dry-run   # muestra qué tablas y filas hay
+npm run db:reset -- --force     # DROP SCHEMA public + recrea, vacío
+npm run db:migrate              # reconstruye todo el schema desde las migraciones
+npm run seed                    # (opcional) datos de demo
+```
 
 ### Pagos: cómo se activa el acceso
 
