@@ -14,13 +14,27 @@ import { seedLessons } from './lesson.seed';
 
 config(); // carga variables desde .env
 
+/* Misma lógica que scripts/db-migrate.js: usa DATABASE_URL si está (Supabase,
+   Render), si no arma la conexión con DB_HOST/DB_USERNAME/etc (local). SSL
+   con DB_SSL=true — sin esto, correr el seed contra una base que exige TLS
+   (Supabase, Render) falla antes de conectar. */
+const useSsl = process.env.DB_SSL === 'true';
+const ssl = useSsl ? { rejectUnauthorized: false } : false;
+
+const connectionOptions = process.env.DATABASE_URL
+    ? { url: process.env.DATABASE_URL, ssl }
+    : {
+        host: process.env.DB_HOST,
+        port: Number(process.env.DB_PORT),
+        username: process.env.DB_USERNAME,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
+        ssl,
+    };
+
 const dataSource = new DataSource({
     type: 'postgres',
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT),
-    username: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    ...connectionOptions,
     entities: [
         Course,
         Category,
