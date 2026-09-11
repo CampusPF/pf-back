@@ -101,9 +101,15 @@ export const envValidationSchema = Joi.object({
   // con Stripe (ver bloque STRIPE_* arriba). Las variables MP_* quedaron sin
   // uso y no se validan.
 
-  // TODO(seguridad): cuando se integre Cloudinary, agregar CLOUDINARY_CLOUD_NAME,
-  // CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET como requeridas en producción.
-  // Hoy no existe ningún endpoint de upload en la API.
+  // --- Archivos: Cloudinary ---
+  // CLOUDINARY_API_SECRET vive SOLO en el backend: la subida pasa siempre por
+  // la API (Multer + upload_stream), el front nunca ve la credencial.
+  // En dev son opcionales (se puede levantar la app sin subir archivos); los
+  // endpoints de upload responden 503 hasta que estén configuradas, igual que
+  // hace /payments con STRIPE_SECRET_KEY.
+  CLOUDINARY_CLOUD_NAME: requiredInProd(Joi.string()),
+  CLOUDINARY_API_KEY: requiredInProd(Joi.string()),
+  CLOUDINARY_API_SECRET: requiredInProd(Joi.string()),
 })
   // Permite variables extra en el entorno (PATH, HOME, las que inyecta el
   // hosting, etc.) sin hacer fallar el arranque.

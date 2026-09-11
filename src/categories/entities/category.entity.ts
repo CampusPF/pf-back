@@ -16,6 +16,11 @@ export class Category {
     @Column({ nullable: true })
     imageUrl?: string;
 
+    // public_id de Cloudinary, para poder borrar la imagen vieja al reemplazarla.
+    // Null si imageUrl apunta a una URL externa.
+    @Column({ nullable: true })
+    imagePublicId?: string;
+
     @Column({ nullable: true })
     color?: string;
 

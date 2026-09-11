@@ -105,7 +105,10 @@ async function main() {
       await client.query(g);
     } catch (e) {
       // Los roles de Supabase no existen en un Postgres común: ignorar.
-      if (!/role .* does not exist/i.test(e.message)) throw e;
+      // Por código (42704 = undefined_object), no por el texto del mensaje:
+      // en un Postgres con locale es_ES el mensaje viene en español
+      // ("no existe el rol «anon»"), y una regex en inglés no lo reconoce.
+      if (e.code !== '42704') throw e;
     }
   }
 

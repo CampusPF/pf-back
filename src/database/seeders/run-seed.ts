@@ -6,6 +6,7 @@ import { User } from '../../users/entities/user.entity';
 import { CourseModule as CourseModuleEntity } from '../../course-modules/entities/course-module.entity';
 import { CourseEnrollment } from '../../course-enrollments/entities/course-enrollment.entity';
 import { Lesson } from '../../lessons/entities/lesson.entity';
+import { LessonResource } from '../../lessons/entities/lesson-resource.entity';
 import { LessonProgress } from '../../lesson-progress/entities/lesson-progress.entity';
 import { Subscription } from '../../subscriptions/entities/subscription.entity';
 import { seedCourses } from './course.seed';
@@ -27,6 +28,7 @@ const dataSource = new DataSource({
         CourseModuleEntity,
         CourseEnrollment,
         Lesson,
+        LessonResource,
         LessonProgress,
         Subscription,
     ],

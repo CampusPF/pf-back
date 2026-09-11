@@ -33,6 +33,12 @@ export class Course {
     @Column({ name: 'image_url', nullable: true })
     imageUrl: string;
 
+    // public_id de Cloudinary de la portada. Sin él no se puede borrar ni
+    // reemplazar el archivo viejo al subir uno nuevo. Queda null cuando
+    // imageUrl es una URL externa (seeds, imágenes de terceros).
+    @Column({ name: 'image_public_id', nullable: true })
+    imagePublicId: string;
+
     // Precio en la unidad mínima de la moneda (centavos para usd). 0 = curso
     // gratis: no pasa por Stripe, se puede inscribir directo. > 0 obliga a
     // pagar vía POST /payments/create-intent y la inscripción la crea el

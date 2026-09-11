@@ -284,3 +284,24 @@ git push -u origin feature/lo-que-sea
   hagas `reset --hard`. Avisá, se soluciona sin perder nada.
 - **"No sé si esto rompe algo en producción"**: preguntá antes de abrir el
   PR a `main`. Nunca "probemos y vemos" directo en producción.
+- **`git checkout`/`git pull` dice "los cambios locales de
+  tsconfig.build.tsbuildinfo / tsconfig.tsbuildinfo serán sobrescritos"**:
+  son el caché incremental de TypeScript. Se regeneran solos en cada build,
+  así que si tu copia todavía los tiene trackeados (de antes de que se
+  sacaran del repo), cada `npm run build` los ensucia y bloquea cualquier
+  cambio de rama. Arreglo de una sola vez:
+  ```bash
+  git checkout -- tsconfig.build.tsbuildinfo tsconfig.tsbuildinfo
+  git checkout develop
+  git pull origin develop
+  ```
+  Si igual se queja, es porque además los modificaste sin querer en la rama
+  en la que estás parado — mandalos a un stash descartable y seguí:
+  ```bash
+  git stash -u
+  git checkout develop
+  git pull origin develop
+  git stash drop
+  ```
+  Después de este `pull` no debería volver a pasar: los dos archivos están en
+  `.gitignore` (`*.tsbuildinfo`), así que Git ya no los sigue.

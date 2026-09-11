@@ -2,6 +2,13 @@
 /dist
 /node_modules
 /build
+tsconfig.tsbuildinfo
+tsconfig.build.tsbuildinfo
+# Genérico: cualquier cache incremental de TypeScript, no sólo esos dos
+# nombres. Es lo que hacía que `git checkout`/`pull` se abortara con "los
+# cambios locales serán sobrescritos" cada vez que alguien compilaba: el
+# archivo se regenera en cada build y quedaba modificado sin commitear.
+*.tsbuildinfo
 
 # Logs
 logs
