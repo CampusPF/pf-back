@@ -9,7 +9,10 @@ import {
   UseGuards,
   ForbiddenException,
   ParseUUIDPipe,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -23,7 +26,18 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 import { UserRole } from './entities/user.entity';
 
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  IMAGE_UPLOAD_OPTIONS,
+  assertFilePresent,
+} from '../file-upload/file-validation';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -69,6 +83,38 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.usersService.updateProfile(id, dto);
+  }
+
+  /**
+   * Avatar del propio usuario. Como `PATCH me`, el id sale del token: nadie
+   * puede cambiarle la foto a otro, ni siquiera un admin.
+   */
+  @Patch('me/avatar')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('file', IMAGE_UPLOAD_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'JPEG, PNG o WEBP. Máx. 5MB.',
+        },
+      },
+    },
+  })
+  @ApiOperation({ summary: 'Subir o reemplazar el avatar propio' })
+  @ApiResponse({ status: 200, description: 'Perfil actualizado, con avatarUrl' })
+  @ApiResponse({ status: 400, description: 'Archivo faltante, muy grande o que no es una imagen' })
+  @ApiResponse({ status: 503, description: 'Cloudinary no configurado' })
+  updateMyAvatar(
+    @CurrentUser('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return this.usersService.updateAvatar(id, assertFilePresent(file));
   }
 
   /** Cambia la contraseña, o crea la primera si la cuenta es de Google. */

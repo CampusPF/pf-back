@@ -1,5 +1,17 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  IMAGE_UPLOAD_OPTIONS,
+  assertFilePresent,
+} from '../file-upload/file-validation';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -36,6 +48,36 @@ export class CategoriesController {
   @Public()
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);
+  }
+
+  @Post(':id/image')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file', IMAGE_UPLOAD_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'JPEG, PNG o WEBP. Máx. 5MB.',
+        },
+      },
+    },
+  })
+  @ApiOperation({ summary: 'Subir o reemplazar la imagen de la categoría' })
+  @ApiResponse({ status: 400, description: 'Archivo faltante, muy grande o que no es una imagen' })
+  @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
+  @ApiResponse({ status: 503, description: 'Cloudinary no configurado' })
+  updateImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return this.categoriesService.updateImage(id, assertFilePresent(file));
   }
 
   @Patch(':id')

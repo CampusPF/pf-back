@@ -71,16 +71,17 @@ export class LessonsController {
       'Siempre responde 200. Si el usuario no tiene acceso al contenido ' +
       '(curso pago sin inscripción activa ni suscripción ACTIVE), devuelve ' +
       'content y videoUrl en null y hasAccess:false. Título/orden/módulo van ' +
-      'siempre, para poder mostrar un CTA de compra.',
+      'siempre, para poder mostrar un CTA de compra. El admin y el instructor ' +
+      'del curso siempre tienen acceso.',
   })
   @ApiResponse({ status: 404, description: 'Lección no encontrada' })
   async findOne(
     @Param('id') id: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: { id: string; role: UserRole },
   ): Promise<LessonView> {
     const lesson = await this.lessonsService.findOne(id);
     const hasAccess = await this.lessonsAccess.canAccessCourseContent(
-      userId,
+      user,
       lesson.module?.course,
     );
 
