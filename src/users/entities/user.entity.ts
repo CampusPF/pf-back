@@ -50,6 +50,16 @@ export class User {
     @Column({ type: 'varchar', unique: true, nullable: true })
     googleId: string | null;
 
+    // Foto de perfil. Puede venir de dos lados: subida por el usuario a
+    // Cloudinary (PATCH /users/me/avatar) o la foto de la cuenta de Google al
+    // registrarse. En el segundo caso avatarPublicId queda null, porque el
+    // archivo no es nuestro y no hay nada que borrar.
+    @Column({ name: 'avatar_url', nullable: true })
+    avatarUrl: string;
+
+    @Column({ name: 'avatar_public_id', nullable: true })
+    avatarPublicId: string;
+
     @Column({ type: 'enum', enum: UserRole, default: UserRole.STUDENT })
     role: UserRole;
 

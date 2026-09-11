@@ -8,8 +8,22 @@ import {
   Delete,
   UseGuards,
   Query,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  IMAGE_UPLOAD_OPTIONS,
+  assertFilePresent,
+} from '../file-upload/file-validation';
 import { CoursesService } from './courses.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
@@ -55,6 +69,40 @@ export class CoursesController {
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   findOne(@Param('id') id: string) {
     return this.coursesService.findOne(id);
+  }
+
+  @Post(':id/image')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file', IMAGE_UPLOAD_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'JPEG, PNG o WEBP. Máx. 5MB.',
+        },
+      },
+    },
+  })
+  @ApiOperation({
+    summary: 'Subir o reemplazar la portada del curso',
+    description:
+      'La imagen se sube a Cloudinary y reemplaza a la anterior, que se ' +
+      'borra. Devuelve el curso actualizado.',
+  })
+  @ApiResponse({ status: 400, description: 'Archivo faltante, muy grande o que no es una imagen' })
+  @ApiResponse({ status: 404, description: 'Curso no encontrado' })
+  @ApiResponse({ status: 503, description: 'Cloudinary no configurado' })
+  updateImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return this.coursesService.updateImage(id, assertFilePresent(file));
   }
 
   @Patch(':id')

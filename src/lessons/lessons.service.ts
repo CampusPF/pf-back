@@ -73,14 +73,19 @@ export class LessonsService {
 
   /**
    * Único punto que trae content/videoUrl (vía addSelect, porque son
-   * `select:false`). Incluye module.course para que el controller pueda
-   * resolver el gate de acceso (course.priceInCents) sin una query aparte.
+   * `select:false`). Incluye module.course y su instructor para que el
+   * controller pueda resolver el gate de acceso (priceInCents y titularidad)
+   * sin una query aparte.
    */
   async findOne(id: string): Promise<Lesson> {
     const lesson = await this.lessonsRepository
       .createQueryBuilder('lesson')
       .leftJoinAndSelect('lesson.module', 'module')
       .leftJoinAndSelect('module.course', 'course')
+      // Sólo el id: no hace falta traer el usuario entero para comparar
+      // titularidad, y así no se filtran datos del instructor en la respuesta.
+      .leftJoin('course.instructor', 'instructor')
+      .addSelect('instructor.id')
       .addSelect(['lesson.content', 'lesson.videoUrl'])
       .where('lesson.id = :id', { id })
       .getOne();

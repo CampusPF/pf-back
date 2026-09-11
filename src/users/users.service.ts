@@ -13,6 +13,10 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { normalizeEmail } from '../common/utils/normalize-email.util';
+import {
+  CloudinaryService,
+  UPLOAD_FOLDERS,
+} from '../file-upload/cloudinary.service';
 
 /** Lo que ve el usuario de sí mismo en GET /users/me. Nunca incluye el hash. */
 export interface UserProfile {
@@ -27,6 +31,7 @@ export interface UserProfile {
   address: string | null;
   city: string | null;
   country: string | null;
+  avatarUrl: string | null;
   /** false = cuenta creada con Google que todavía no seteó contraseña. */
   hasPassword: boolean;
   isGoogleAccount: boolean;
@@ -44,6 +49,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
+    private readonly cloudinary: CloudinaryService,
   ) { }
 
   async create(dto: CreateUserDto): Promise<User> {
@@ -160,6 +166,7 @@ export class UsersService {
         address: true,
         city: true,
         country: true,
+        avatarUrl: true,
         googleId: true,
         // select:false en la entidad; pedirlo explícitamente lo trae.
         passwordHash: true,
@@ -182,6 +189,7 @@ export class UsersService {
       address: user.address ?? null,
       city: user.city ?? null,
       country: user.country ?? null,
+      avatarUrl: user.avatarUrl ?? null,
       // El front necesita los dos para decidir qué formulario de contraseña
       // mostrar: sin contraseña se ofrece crear una (sin pedir la actual).
       hasPassword: user.passwordHash !== null && user.passwordHash !== undefined,
@@ -196,6 +204,43 @@ export class UsersService {
     // update() en vez de save(): sólo toca las columnas del dto y no arrastra
     // una entidad parcial (findProfile no carga todas las columnas).
     await this.usersRepository.update({ id }, dto);
+
+    return this.findProfile(id);
+  }
+
+  /**
+   * Reemplaza el avatar por un archivo subido a Cloudinary.
+   *
+   * Se guarda el publicId junto a la URL para poder borrar el anterior. Si el
+   * avatar actual venía de Google, avatarPublicId es null: la foto no es
+   * nuestra y no hay nada que borrar, sólo se pisa la URL.
+   *
+   * La URL es pública, pero el public_id que genera Cloudinary es aleatorio y
+   * no adivinable a partir del id del usuario.
+   */
+  async updateAvatar(
+    id: string,
+    file: Express.Multer.File,
+  ): Promise<UserProfile> {
+    // 404 antes de gastar una subida si el id no existe.
+    await this.findProfile(id);
+
+    const current = await this.usersRepository.findOne({
+      where: { id },
+      select: { id: true, avatarPublicId: true },
+    });
+
+    const { url, publicId } = await this.cloudinary.replaceImage(
+      file,
+      UPLOAD_FOLDERS.AVATARS,
+      current?.avatarPublicId,
+    );
+
+    // update() en vez de save(): la entidad cargada es parcial.
+    await this.usersRepository.update(
+      { id },
+      { avatarUrl: url, avatarPublicId: publicId },
+    );
 
     return this.findProfile(id);
   }

@@ -9,6 +9,10 @@ import { Category } from './entities/category.entity';
 import { CategoriesRepository } from './categories.repository';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import {
+  CloudinaryService,
+  UPLOAD_FOLDERS,
+} from '../file-upload/cloudinary.service';
 
 @Injectable()
 export class CategoriesService {
@@ -16,6 +20,7 @@ export class CategoriesService {
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
     private readonly customRepo: CategoriesRepository,
+    private readonly cloudinary: CloudinaryService,
   ) { }
 
   async create(dto: CreateCategoryDto): Promise<Category> {
@@ -64,6 +69,25 @@ export class CategoriesService {
     }
 
     Object.assign(category, dto);
+    return this.categoriesRepository.save(category);
+  }
+
+  /**
+   * Reemplaza la imagen de la categoría por un archivo subido a Cloudinary.
+   * Se guarda el publicId junto a la URL para poder borrar la anterior.
+   */
+  async updateImage(id: string, file: Express.Multer.File): Promise<Category> {
+    const category = await this.findOne(id);
+
+    const { url, publicId } = await this.cloudinary.replaceImage(
+      file,
+      UPLOAD_FOLDERS.CATEGORIES,
+      category.imagePublicId,
+    );
+
+    category.imageUrl = url;
+    category.imagePublicId = publicId;
+
     return this.categoriesRepository.save(category);
   }
 

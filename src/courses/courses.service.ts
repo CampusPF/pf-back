@@ -7,6 +7,10 @@ import { User } from '../users/entities/user.entity';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { generateUniqueSlug } from './utils/slug.util';
+import {
+  CloudinaryService,
+  UPLOAD_FOLDERS,
+} from '../file-upload/cloudinary.service';
 
 @Injectable()
 export class CoursesService {
@@ -17,6 +21,7 @@ export class CoursesService {
     private readonly categoriesRepository: Repository<Category>,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
+    private readonly cloudinary: CloudinaryService,
   ) { }
 
   async create(dto: CreateCourseDto, instructorId: string): Promise<Course> {
@@ -100,6 +105,28 @@ export class CoursesService {
       priceInCents: dto.priceInCents ?? course.priceInCents,
       currency: dto.currency ?? course.currency,
     });
+
+    return this.coursesRepository.save(course);
+  }
+
+  /**
+   * Reemplaza la portada del curso por un archivo subido a Cloudinary.
+   *
+   * Se guarda el publicId junto a la URL: sin él no habría forma de borrar el
+   * archivo viejo cuando se suba uno nuevo. Si la portada actual era una URL
+   * externa (seed), imagePublicId es null y no hay nada que borrar.
+   */
+  async updateImage(id: string, file: Express.Multer.File): Promise<Course> {
+    const course = await this.findOne(id);
+
+    const { url, publicId } = await this.cloudinary.replaceImage(
+      file,
+      UPLOAD_FOLDERS.COURSES,
+      course.imagePublicId,
+    );
+
+    course.imageUrl = url;
+    course.imagePublicId = publicId;
 
     return this.coursesRepository.save(course);
   }

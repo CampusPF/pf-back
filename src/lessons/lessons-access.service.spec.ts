@@ -1,6 +1,7 @@
 import { LessonsAccessService } from './lessons-access.service';
 import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { UserRole } from '../users/entities/user.entity';
 
 /**
  * Unit del gate de acceso a contenido. Los dos building blocks
@@ -8,8 +9,17 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
  * REGLA de combinación, no su implementación.
  */
 
+const INSTRUCTOR_ID = 'teacher-1';
+
 const FREE_COURSE = { id: 'c-free', priceInCents: 0 };
-const PAID_COURSE = { id: 'c-paid', priceInCents: 4999 };
+const PAID_COURSE = {
+    id: 'c-paid',
+    priceInCents: 4999,
+    instructor: { id: INSTRUCTOR_ID },
+};
+
+/** Alumno común, el caso por defecto. */
+const STUDENT = { id: 'u1', role: UserRole.STUDENT };
 
 function makeService() {
     const hasActiveEnrollment = jest.fn(async () => false);
@@ -28,7 +38,7 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
         const { service, hasActiveEnrollment, hasActiveSubscription } = makeService();
 
         await expect(
-            service.canAccessCourseContent('u1', FREE_COURSE),
+            service.canAccessCourseContent(STUDENT, FREE_COURSE),
         ).resolves.toBe(true);
 
         expect(hasActiveEnrollment).not.toHaveBeenCalled();
@@ -38,7 +48,7 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
     it('curso pago, sin enrollment ni suscripción → false', async () => {
         const { service } = makeService();
         await expect(
-            service.canAccessCourseContent('u1', PAID_COURSE),
+            service.canAccessCourseContent(STUDENT, PAID_COURSE),
         ).resolves.toBe(false);
     });
 
@@ -47,9 +57,9 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
         hasActiveEnrollment.mockResolvedValueOnce(true);
 
         await expect(
-            service.canAccessCourseContent('u1', PAID_COURSE),
+            service.canAccessCourseContent(STUDENT, PAID_COURSE),
         ).resolves.toBe(true);
-        expect(hasActiveEnrollment).toHaveBeenCalledWith('u1', PAID_COURSE.id);
+        expect(hasActiveEnrollment).toHaveBeenCalledWith(STUDENT.id, PAID_COURSE.id);
     });
 
     it('curso pago, sin inscripción pero con suscripción ACTIVE → true', async () => {
@@ -57,7 +67,7 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
         hasActiveSubscription.mockResolvedValueOnce(true);
 
         await expect(
-            service.canAccessCourseContent('u1', PAID_COURSE),
+            service.canAccessCourseContent(STUDENT, PAID_COURSE),
         ).resolves.toBe(true);
     });
 
@@ -69,12 +79,73 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
         hasActiveSubscription.mockResolvedValueOnce(false);
 
         await expect(
-            service.canAccessCourseContent('u1', PAID_COURSE),
+            service.canAccessCourseContent(STUDENT, PAID_COURSE),
         ).resolves.toBe(false);
     });
 
     it('sin curso (relación no cargada) → false', async () => {
         const { service } = makeService();
-        await expect(service.canAccessCourseContent('u1', null)).resolves.toBe(false);
+        await expect(
+            service.canAccessCourseContent(STUDENT, null),
+        ).resolves.toBe(false);
+    });
+
+    // Sin estas dos excepciones, quien administra el catálogo no puede ver ni
+    // el contenido que él mismo carga (ni descargar los PDFs que adjunta).
+    it('ADMIN sin inscripción → true, sin consultar nada', async () => {
+        const { service, hasActiveEnrollment, hasActiveSubscription } = makeService();
+
+        await expect(
+            service.canAccessCourseContent(
+                { id: 'admin-1', role: UserRole.ADMIN },
+                PAID_COURSE,
+            ),
+        ).resolves.toBe(true);
+
+        expect(hasActiveEnrollment).not.toHaveBeenCalled();
+        expect(hasActiveSubscription).not.toHaveBeenCalled();
+    });
+
+    it('instructor del curso sin inscripción → true', async () => {
+        const { service, hasActiveEnrollment } = makeService();
+
+        await expect(
+            service.canAccessCourseContent(
+                { id: INSTRUCTOR_ID, role: UserRole.TEACHER },
+                PAID_COURSE,
+            ),
+        ).resolves.toBe(true);
+
+        expect(hasActiveEnrollment).not.toHaveBeenCalled();
+    });
+
+    it('instructor de OTRO curso → sigue la regla normal (false)', async () => {
+        const { service } = makeService();
+
+        await expect(
+            service.canAccessCourseContent(
+                { id: 'teacher-2', role: UserRole.TEACHER },
+                PAID_COURSE,
+            ),
+        ).resolves.toBe(false);
+    });
+
+    it('si la relación instructor no vino en la query, no da acceso por error', async () => {
+        const { service } = makeService();
+        const courseSinInstructor = { id: 'c-paid', priceInCents: 4999 };
+
+        await expect(
+            service.canAccessCourseContent(
+                { id: INSTRUCTOR_ID, role: UserRole.TEACHER },
+                courseSinInstructor,
+            ),
+        ).resolves.toBe(false);
+    });
+
+    it('sin usuario → false', async () => {
+        const { service } = makeService();
+        await expect(
+            service.canAccessCourseContent({ id: '' }, FREE_COURSE),
+        ).resolves.toBe(false);
     });
 });

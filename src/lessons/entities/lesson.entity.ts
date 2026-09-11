@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
 import { CourseModule } from '../../course-modules/entities/course-module.entity';
 import { LessonProgress } from '../../lesson-progress/entities/lesson-progress.entity';
+import { LessonResource } from './lesson-resource.entity';
 
 @Entity('lessons')
 export class Lesson {
@@ -46,4 +47,7 @@ export class Lesson {
 
     @OneToMany(() => LessonProgress, (progress) => progress.lesson)
     progressRecords: LessonProgress[];
+
+    @OneToMany(() => LessonResource, (resource) => resource.lesson)
+    resources: LessonResource[];
 }

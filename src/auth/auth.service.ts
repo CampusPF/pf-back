@@ -16,6 +16,8 @@ interface GoogleUserPayload {
     googleId: string;
     email: string;
     name: string;
+    /** Foto de la cuenta de Google. Opcional: el perfil puede no tenerla. */
+    avatarUrl?: string;
 }
 
 /**
@@ -140,9 +142,13 @@ export class AuthService {
 
     /**
      * Alta de una cuenta nueva a partir del perfil de Google (registro
-     * social). Google sólo nos da nombre y email: birthDate, phone y country
+     * social). Google nos da nombre, email y foto: birthDate, phone y country
      * quedan en null y se completan después desde el perfil. La cuenta no
      * tiene passwordHash — sólo se entra con Google hasta que setee una.
+     *
+     * La foto se guarda como avatarUrl pero SIN avatarPublicId: el archivo es
+     * de Google, no nuestro, así que no hay nada que borrar si después el
+     * usuario sube su propio avatar.
      */
     private async createGoogleUser(
         googleUser: GoogleUserPayload,
@@ -154,6 +160,7 @@ export class AuthService {
                 name: googleUser.name?.trim() || email.split('@')[0],
                 email,
                 googleId: googleUser.googleId,
+                avatarUrl: googleUser.avatarUrl,
                 passwordHash: null,
                 role: UserRole.STUDENT,
                 status: UserStatus.ACTIVE,
