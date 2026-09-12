@@ -1,11 +1,17 @@
 import {
+    BadRequestException,
     Injectable,
     InternalServerErrorException,
     Logger,
     ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UploadApiOptions, UploadApiResponse, v2 } from 'cloudinary';
+import {
+    UploadApiErrorResponse,
+    UploadApiOptions,
+    UploadApiResponse,
+    v2,
+} from 'cloudinary';
 import { assertMagicBytes } from './file-validation';
 import toStream = require('buffer-to-stream');
 
@@ -194,11 +200,7 @@ export class CloudinaryService {
                     this.logger.error(
                         `Falló la subida a Cloudinary: ${error?.message ?? 'sin resultado'}`,
                     );
-                    reject(
-                        new InternalServerErrorException(
-                            'No se pudo subir el archivo. Intentá de nuevo.',
-                        ),
-                    );
+                    reject(this.toUploadException(error));
                     return;
                 }
                 resolve(result);
@@ -206,6 +208,33 @@ export class CloudinaryService {
 
             toStream(file.buffer).pipe(stream);
         });
+    }
+
+    /**
+     * Traduce un fallo de Cloudinary a la excepción que corresponde.
+     *
+     * Cloudinary responde 4xx cuando el problema es EL ARCHIVO, no el
+     * servicio: "Image file corrupt" (imagen truncada — cabecera sana,
+     * contenido incompleto), "Invalid image file", formato no soportado.
+     * Eso es un 400: el servidor funcionó bien, lo que no sirve es lo que
+     * mandó el cliente. Devolver 500 hacía que la UI dijera "intentá de
+     * nuevo" para algo que no iba a andar por más veces que lo reintentara.
+     *
+     * Lo demás (5xx de Cloudinary, timeout, corte de red) sí es nuestro y
+     * sigue siendo 500.
+     */
+    private toUploadException(error?: UploadApiErrorResponse) {
+        const httpCode = error?.http_code;
+
+        if (typeof httpCode === 'number' && httpCode >= 400 && httpCode < 500) {
+            return new BadRequestException(
+                'No pudimos procesar el archivo: puede estar dañado o incompleto. Probá con otro.',
+            );
+        }
+
+        return new InternalServerErrorException(
+            'No se pudo subir el archivo. Intentá de nuevo.',
+        );
     }
 
     private folderPath(folder: string): string {
