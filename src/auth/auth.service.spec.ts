@@ -3,6 +3,7 @@ import { QueryFailedError } from 'typeorm';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
+import { CloudinaryService } from '../file-upload/cloudinary.service';
 
 // Nota: NO se usa @nestjs/testing acá a propósito. La versión instalada
 // (v12.0.1) se distribuye como paquete ESM puro ("type": "module", sin
@@ -123,8 +124,13 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
   beforeEach(() => {
     const fakeRepo = new FakeUsersRepository();
 
-    // UsersService solo depende del repositorio de User.
-    usersService = new UsersService(fakeRepo as any);
+    // UsersService depende del repositorio de User y de CloudinaryService.
+    // Este test no toca avatares, así que Cloudinary va vacío: si algún
+    // camino lo usara por error, falla con un TypeError en vez de pasar.
+    usersService = new UsersService(
+      fakeRepo as any,
+      {} as unknown as CloudinaryService,
+    );
 
     // JwtService real de @nestjs/jwt no hace falta: lo único que AuthService
     // usa de él es `.sign(payload)`, así que un mock alcanza y sigue siendo

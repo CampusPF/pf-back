@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { LessonsController } from './lessons.controller';
 import { LessonsService } from './lessons.service';
 import { LessonsAccessService } from './lessons-access.service';
+import { UserRole } from '../users/entities/user.entity';
 
 /**
  * Foco: GET /lessons/:id nunca devuelve el contenido real si el usuario no
@@ -26,6 +27,12 @@ function lessonFixture(priceInCents: number) {
     };
 }
 
+/**
+ * El controller le pasa al gate el usuario entero, no sólo el id: el gate
+ * necesita el rol para dejar pasar al ADMIN.
+ */
+const STUDENT = { id: 'user-1', role: UserRole.STUDENT };
+
 function makeController(canAccess: boolean) {
     const findOne = jest.fn();
     const canAccessCourseContent = jest.fn(async () => canAccess);
@@ -43,7 +50,7 @@ describe('LessonsController.findOne (gate de contenido)', () => {
         const { controller, findOne } = makeController(true);
         findOne.mockResolvedValueOnce(lessonFixture(4999));
 
-        const res = await controller.findOne('lesson-1', 'user-1');
+        const res = await controller.findOne('lesson-1', STUDENT);
 
         expect(res.hasAccess).toBe(true);
         expect(res.content).toBe('contenido real premium');
@@ -55,7 +62,7 @@ describe('LessonsController.findOne (gate de contenido)', () => {
         const { controller, findOne } = makeController(false);
         findOne.mockResolvedValueOnce(lessonFixture(4999));
 
-        const res = await controller.findOne('lesson-1', 'user-1');
+        const res = await controller.findOne('lesson-1', STUDENT);
 
         expect(res.hasAccess).toBe(false);
         expect(res.content).toBeNull();
@@ -72,9 +79,10 @@ describe('LessonsController.findOne (gate de contenido)', () => {
         const { controller, findOne, canAccessCourseContent } = makeController(true);
         findOne.mockResolvedValueOnce(lessonFixture(0));
 
-        await controller.findOne('lesson-1', 'user-9');
+        const user = { id: 'user-9', role: UserRole.STUDENT };
+        await controller.findOne('lesson-1', user);
 
-        expect(canAccessCourseContent).toHaveBeenCalledWith('user-9', {
+        expect(canAccessCourseContent).toHaveBeenCalledWith(user, {
             id: 'course-1',
             priceInCents: 0,
         });
@@ -84,7 +92,7 @@ describe('LessonsController.findOne (gate de contenido)', () => {
         const { controller, findOne } = makeController(true);
         findOne.mockRejectedValueOnce(new NotFoundException());
 
-        await expect(controller.findOne('nope', 'user-1')).rejects.toBeInstanceOf(
+        await expect(controller.findOne('nope', STUDENT)).rejects.toBeInstanceOf(
             NotFoundException,
         );
     });
