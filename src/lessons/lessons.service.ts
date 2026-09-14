@@ -5,6 +5,7 @@ import { Lesson } from './entities/lesson.entity';
 import { CourseModule as CourseModuleEntity } from '../course-modules/entities/course-module.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { Actor, assertCourseOwner } from '../common/utils/assert-course-owner.util';
 
 @Injectable()
 export class LessonsService {
@@ -15,13 +16,15 @@ export class LessonsService {
     private readonly courseModulesRepository: Repository<CourseModuleEntity>,
   ) { }
 
-  async create(dto: CreateLessonDto): Promise<Lesson> {
+  async create(dto: CreateLessonDto, actor: Actor): Promise<Lesson> {
     const courseModule = await this.courseModulesRepository.findOne({
       where: { id: dto.moduleId },
+      relations: { course: { instructor: true } },
     });
     if (!courseModule) {
       throw new NotFoundException(`Módulo con id ${dto.moduleId} no encontrado`);
     }
+    assertCourseOwner(courseModule.course, actor);
 
     let order = dto.order;
     if (order === undefined) {
@@ -103,8 +106,9 @@ export class LessonsService {
    * pelado, el save() de abajo las guardaría como undefined y BORRARÍA el
    * contenido de la lección sin que nadie lo pida.
    */
-  async update(id: string, dto: UpdateLessonDto): Promise<Lesson> {
+  async update(id: string, dto: UpdateLessonDto, actor: Actor): Promise<Lesson> {
     const lesson = await this.findOne(id);
+    assertCourseOwner(lesson.module.course, actor);
 
     Object.assign(lesson, {
       title: dto.title ?? lesson.title,
@@ -123,14 +127,16 @@ export class LessonsService {
    * esta lección, borrarla físicamente rompería ese historial. isActive:false
    * la saca del temario visible sin perder el progreso ya cursado.
    */
-  async remove(id: string): Promise<Lesson> {
+  async remove(id: string, actor: Actor): Promise<Lesson> {
     const lesson = await this.findOne(id);
+    assertCourseOwner(lesson.module.course, actor);
     lesson.isActive = false;
     return this.lessonsRepository.save(lesson);
   }
 
-  async restore(id: string): Promise<Lesson> {
+  async restore(id: string, actor: Actor): Promise<Lesson> {
     const lesson = await this.findOne(id);
+    assertCourseOwner(lesson.module.course, actor);
     lesson.isActive = true;
     return this.lessonsRepository.save(lesson);
   }

@@ -57,7 +57,7 @@ export class LessonResourcesController {
 
     @Post()
     @UseGuards(RolesGuard)
-    @Roles(UserRole.ADMIN)
+    @Roles(UserRole.ADMIN, UserRole.TEACHER)
     @UseInterceptors(FileInterceptor('file', PDF_UPLOAD_OPTIONS))
     @ApiConsumes('multipart/form-data')
     @ApiBody({
@@ -76,16 +76,19 @@ export class LessonResourcesController {
     @ApiOperation({ summary: 'Adjuntar un PDF a una lección' })
     @ApiResponse({ status: 201, description: 'Recurso adjuntado' })
     @ApiResponse({ status: 400, description: 'Archivo faltante, muy grande o que no es un PDF' })
+    @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
     @ApiResponse({ status: 503, description: 'Cloudinary no configurado' })
     create(
         @Param('id') lessonId: string,
         @UploadedFile() file: Express.Multer.File | undefined,
-        @Body('title') title?: string,
+        @Body('title') title: string | undefined,
+        @CurrentUser() user: { id: string; role: UserRole },
     ) {
         return this.resourcesService.create(
             lessonId,
             assertFilePresent(file),
             title,
+            user,
         );
     }
 
@@ -109,18 +112,20 @@ export class LessonResourcesController {
 
     @Delete(':resourceId')
     @UseGuards(RolesGuard)
-    @Roles(UserRole.ADMIN)
+    @Roles(UserRole.ADMIN, UserRole.TEACHER)
     @HttpCode(HttpStatus.NO_CONTENT)
     @ApiOperation({
         summary: 'Eliminar un adjunto',
         description: 'Borrado físico: se elimina también el archivo en Cloudinary.',
     })
     @ApiResponse({ status: 204, description: 'Recurso eliminado' })
+    @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
     @ApiResponse({ status: 404, description: 'Lección o recurso no encontrado' })
     remove(
         @Param('id') lessonId: string,
         @Param('resourceId') resourceId: string,
+        @CurrentUser() user: { id: string; role: UserRole },
     ) {
-        return this.resourcesService.remove(lessonId, resourceId);
+        return this.resourcesService.remove(lessonId, resourceId, user);
     }
 }

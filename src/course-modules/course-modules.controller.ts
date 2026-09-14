@@ -1,8 +1,9 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CourseModulesService } from './course-modules.service';
 import { CreateCourseModuleDto } from './dto/create-course-module.dto';
 import { UpdateCourseModuleDto } from './dto/update-course-module.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/entities/user.entity';
@@ -20,9 +21,13 @@ export class CourseModulesController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  create(@Body() createCourseModuleDto: CreateCourseModuleDto) {
-    return this.courseModulesService.create(createCourseModuleDto);
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  create(
+    @Body() createCourseModuleDto: CreateCourseModuleDto,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.courseModulesService.create(createCourseModuleDto, user);
   }
 
   @Get()
@@ -37,22 +42,29 @@ export class CourseModulesController {
 
   @Patch(':id')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  update(@Param('id') id: string, @Body() updateCourseModuleDto: UpdateCourseModuleDto) {
-    return this.courseModulesService.update(id, updateCourseModuleDto);
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  update(
+    @Param('id') id: string,
+    @Body() updateCourseModuleDto: UpdateCourseModuleDto,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.courseModulesService.update(id, updateCourseModuleDto, user);
   }
 
   @Patch(':id/restore')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  restore(@Param('id') id: string) {
-    return this.courseModulesService.restore(id);
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  restore(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
+    return this.courseModulesService.restore(id, user);
   }
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.courseModulesService.remove(id);
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  remove(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
+    return this.courseModulesService.remove(id, user);
   }
 }
