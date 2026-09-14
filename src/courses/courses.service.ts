@@ -7,6 +7,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { generateUniqueSlug } from './utils/slug.util';
+import { Actor, assertCourseOwner } from '../common/utils/assert-course-owner.util';
 import {
   CloudinaryService,
   UPLOAD_FOLDERS,
@@ -84,8 +85,9 @@ export class CoursesService {
     return course;
   }
 
-  async update(id: string, dto: UpdateCourseDto): Promise<Course> {
+  async update(id: string, dto: UpdateCourseDto, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
+    assertCourseOwner(course, actor);
 
     if (dto.categoryId) {
       const category = await this.categoriesRepository.findOne({
@@ -132,8 +134,9 @@ export class CoursesService {
    * archivo viejo cuando se suba uno nuevo. Si la portada actual era una URL
    * externa (seed), imagePublicId es null y no hay nada que borrar.
    */
-  async updateImage(id: string, file: Express.Multer.File): Promise<Course> {
+  async updateImage(id: string, file: Express.Multer.File, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
+    assertCourseOwner(course, actor);
 
     const { url, publicId } = await this.cloudinary.replaceImage(
       file,
@@ -152,14 +155,16 @@ export class CoursesService {
    * físicamente sin romper el historial de esos estudiantes. Se marca
    * isActive:false para sacarlo del catálogo público sin perder datos.
    */
-  async remove(id: string): Promise<Course> {
+  async remove(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
+    assertCourseOwner(course, actor);
     course.isActive = false;
     return this.coursesRepository.save(course);
   }
 
-  async restore(id: string): Promise<Course> {
+  async restore(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
+    assertCourseOwner(course, actor);
     course.isActive = true;
     return this.coursesRepository.save(course);
   }

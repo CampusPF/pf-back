@@ -5,6 +5,7 @@ import { CourseModule as CourseModuleEntity } from './entities/course-module.ent
 import { Course } from '../courses/entities/course.entity';
 import { CreateCourseModuleDto } from './dto/create-course-module.dto';
 import { UpdateCourseModuleDto } from './dto/update-course-module.dto';
+import { Actor, assertCourseOwner } from '../common/utils/assert-course-owner.util';
 
 @Injectable()
 export class CourseModulesService {
@@ -15,13 +16,15 @@ export class CourseModulesService {
     private readonly coursesRepository: Repository<Course>,
   ) { }
 
-  async create(dto: CreateCourseModuleDto): Promise<CourseModuleEntity> {
+  async create(dto: CreateCourseModuleDto, actor: Actor): Promise<CourseModuleEntity> {
     const course = await this.coursesRepository.findOne({
       where: { id: dto.courseId },
+      relations: { instructor: true },
     });
     if (!course) {
       throw new NotFoundException(`Curso con id ${dto.courseId} no encontrado`);
     }
+    assertCourseOwner(course, actor);
 
     let order = dto.order;
     if (order === undefined) {
@@ -60,7 +63,8 @@ export class CourseModulesService {
   async findOne(id: string): Promise<CourseModuleEntity> {
     const courseModule = await this.courseModulesRepository.findOne({
       where: { id },
-      relations: { course: true, lessons: true },
+      // course.instructor: lo necesita assertCourseOwner en update/remove/restore.
+      relations: { course: { instructor: true }, lessons: true },
     });
 
     if (!courseModule) {
@@ -70,8 +74,13 @@ export class CourseModulesService {
     return courseModule;
   }
 
-  async update(id: string, dto: UpdateCourseModuleDto): Promise<CourseModuleEntity> {
+  async update(
+    id: string,
+    dto: UpdateCourseModuleDto,
+    actor: Actor,
+  ): Promise<CourseModuleEntity> {
     const courseModule = await this.findOne(id);
+    assertCourseOwner(courseModule.course, actor);
 
     Object.assign(courseModule, {
       title: dto.title ?? courseModule.title,
@@ -86,14 +95,16 @@ export class CourseModulesService {
    * debería desaparecer del historial. isActive:false lo saca del temario
    * visible sin perder el registro de LessonProgress asociado.
    */
-  async remove(id: string): Promise<CourseModuleEntity> {
+  async remove(id: string, actor: Actor): Promise<CourseModuleEntity> {
     const courseModule = await this.findOne(id);
+    assertCourseOwner(courseModule.course, actor);
     courseModule.isActive = false;
     return this.courseModulesRepository.save(courseModule);
   }
 
-  async restore(id: string): Promise<CourseModuleEntity> {
+  async restore(id: string, actor: Actor): Promise<CourseModuleEntity> {
     const courseModule = await this.findOne(id);
+    assertCourseOwner(courseModule.course, actor);
     courseModule.isActive = true;
     return this.courseModulesRepository.save(courseModule);
   }

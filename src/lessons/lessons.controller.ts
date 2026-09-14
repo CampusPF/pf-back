@@ -43,12 +43,16 @@ export class LessonsController {
   @Post()
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Crear una lección dentro de un módulo' })
   @ApiResponse({ status: 201, description: 'Lección creada correctamente' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
   @ApiResponse({ status: 404, description: 'Módulo no encontrado' })
-  create(@Body() dto: CreateLessonDto) {
-    return this.lessonsService.create(dto);
+  create(
+    @Body() dto: CreateLessonDto,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.lessonsService.create(dto, user);
   }
 
   @Get()
@@ -98,27 +102,34 @@ export class LessonsController {
   @Patch(':id')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Actualizar una lección' })
-  update(@Param('id') id: string, @Body() dto: UpdateLessonDto) {
-    return this.lessonsService.update(id, dto);
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateLessonDto,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.lessonsService.update(id, dto, user);
   }
 
   @Patch(':id/restore')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Reactivar una lección previamente eliminada' })
-  restore(@Param('id') id: string) {
-    return this.lessonsService.restore(id);
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  restore(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
+    return this.lessonsService.restore(id, user);
   }
 
   @Delete(':id')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Eliminar una lección (borrado lógico)' })
-  remove(@Param('id') id: string) {
-    return this.lessonsService.remove(id);
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  remove(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
+    return this.lessonsService.remove(id, user);
   }
 }

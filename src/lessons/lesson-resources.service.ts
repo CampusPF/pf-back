@@ -13,6 +13,7 @@ import {
     UPLOAD_FOLDERS,
 } from '../file-upload/cloudinary.service';
 import { assertMagicBytes } from '../file-upload/file-validation';
+import { Actor, assertCourseOwner } from '../common/utils/assert-course-owner.util';
 
 /**
  * Vencimiento de la URL firmada. Corto a propósito: alcanza para que el
@@ -44,10 +45,13 @@ export class LessonResourcesService {
     async create(
         lessonId: string,
         file: Express.Multer.File,
-        title?: string,
+        title: string | undefined,
+        actor: Actor,
     ): Promise<LessonResource> {
-        // 404 antes de gastar una subida si la lección no existe.
-        await this.lessonsService.findOne(lessonId);
+        // 404 antes de gastar una subida si la lección no existe; de paso trae
+        // module.course.instructor para el chequeo de titularidad de abajo.
+        const lesson = await this.lessonsService.findOne(lessonId);
+        assertCourseOwner(lesson.module.course, actor);
 
         // El mimetype lo declara el cliente; esto mira el contenido real.
         assertMagicBytes(file, 'pdf');
@@ -111,7 +115,10 @@ export class LessonResourcesService {
      * de lecciones o inscripciones, donde el borrado es lógico). Se borra
      * primero en Cloudinary para no dejar archivos huérfanos pagando espacio.
      */
-    async remove(lessonId: string, resourceId: string): Promise<void> {
+    async remove(lessonId: string, resourceId: string, actor: Actor): Promise<void> {
+        const lesson = await this.lessonsService.findOne(lessonId);
+        assertCourseOwner(lesson.module.course, actor);
+
         const resource = await this.findOneOrFail(lessonId, resourceId);
 
         await this.cloudinary.destroy(resource.publicId, 'raw', 'authenticated');

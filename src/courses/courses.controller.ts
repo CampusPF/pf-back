@@ -42,12 +42,14 @@ export class CoursesController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Crear un nuevo curso' })
   @ApiResponse({ status: 201, description: 'Curso creado exitosamente' })
   @ApiResponse({ status: 404, description: 'Categoría o Instructor no encontrado' })
   create(
     @Body() createCourseDto: CreateCourseDto,
+    // Quien crea el curso es siempre su instructor — el dto no tiene ese
+    // campo, así que un TEACHER no puede asignárselo a otra persona.
     @CurrentUser('id') instructorId: string,
   ) {
     return this.coursesService.create(createCourseDto, instructorId);
@@ -73,7 +75,7 @@ export class CoursesController {
 
   @Post(':id/image')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @UseInterceptors(FileInterceptor('file', IMAGE_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -96,41 +98,50 @@ export class CoursesController {
       'borra. Devuelve el curso actualizado.',
   })
   @ApiResponse({ status: 400, description: 'Archivo faltante, muy grande o que no es una imagen' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   @ApiResponse({ status: 503, description: 'Cloudinary no configurado' })
   updateImage(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: { id: string; role: UserRole },
   ) {
-    return this.coursesService.updateImage(id, assertFilePresent(file));
+    return this.coursesService.updateImage(id, assertFilePresent(file), user);
   }
 
   @Patch(':id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Actualizar un curso' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
   @ApiResponse({ status: 404, description: 'Curso o Categoría no encontrada' })
-  update(@Param('id') id: string, @Body() updateCourseDto: UpdateCourseDto) {
-    return this.coursesService.update(id, updateCourseDto);
+  update(
+    @Param('id') id: string,
+    @Body() updateCourseDto: UpdateCourseDto,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.coursesService.update(id, updateCourseDto, user);
   }
 
   @Patch(':id/restore')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Reactivar un curso previamente eliminado' })
-  restore(@Param('id') id: string) {
-    return this.coursesService.restore(id);
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  restore(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
+    return this.coursesService.restore(id, user);
   }
 
   @Delete(':id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @ApiOperation({ summary: 'Eliminar un curso (borrado lógico)' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
-  remove(@Param('id') id: string) {
-    return this.coursesService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
+    return this.coursesService.remove(id, user);
   }
 }
