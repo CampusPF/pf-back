@@ -97,6 +97,22 @@ export class CoursesService {
       course.category = category;
     }
 
+    // El slug sigue al título: antes se generaba sólo al crear, así que un
+    // curso renombrado quedaba con la URL del nombre viejo
+    // ("Curso de Routing en React" en /courses/prueba-agregar-curso).
+    // Un slug explícito en el dto tiene prioridad. Ojo: los links viejos al
+    // curso dejan de resolver (el front busca por slug).
+    const slugSource =
+      dto.slug ?? (dto.title && dto.title !== course.title ? dto.title : undefined);
+    if (slugSource) {
+      course.slug = await generateUniqueSlug(
+        slugSource,
+        async (candidate) =>
+          candidate !== course.slug &&
+          (await this.coursesRepository.countBy({ slug: candidate })) > 0,
+      );
+    }
+
     Object.assign(course, {
       title: dto.title ?? course.title,
       description: dto.description ?? course.description,
