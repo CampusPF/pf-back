@@ -100,7 +100,7 @@ describe('LessonResourcesService.getDownloadUrl', () => {
         expect(DOWNLOAD_TTL_SECONDS).toBe(600);
     });
 
-    it('el gate recibe el usuario completo y el curso de la lección', async () => {
+    it('el gate recibe el usuario completo, el curso y la lección', async () => {
         const { service, canAccessCourseContent } = makeService();
 
         await service.getDownloadUrl(LESSON_ID, RESOURCE_ID, STUDENT);
@@ -108,6 +108,7 @@ describe('LessonResourcesService.getDownloadUrl', () => {
         expect(canAccessCourseContent).toHaveBeenCalledWith(
             STUDENT,
             expect.objectContaining({ id: 'c1', priceInCents: 4999 }),
+            expect.objectContaining({ id: LESSON_ID }),
         );
     });
 

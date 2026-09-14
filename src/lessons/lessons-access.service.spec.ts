@@ -33,16 +33,43 @@ function makeService() {
     return { service, hasActiveEnrollment, hasActiveSubscription };
 }
 
+const FREE_LESSON = { isFree: true };
+const LOCKED_LESSON = { isFree: false };
+
 describe('LessonsAccessService.canAccessCourseContent', () => {
-    it('curso gratis → true sin consultar enrollment ni suscripción', async () => {
+    it('lección de muestra (isFree) → true sin consultar enrollment ni suscripción', async () => {
         const { service, hasActiveEnrollment, hasActiveSubscription } = makeService();
 
         await expect(
-            service.canAccessCourseContent(STUDENT, FREE_COURSE),
+            service.canAccessCourseContent(STUDENT, FREE_COURSE, FREE_LESSON),
         ).resolves.toBe(true);
 
         expect(hasActiveEnrollment).not.toHaveBeenCalled();
         expect(hasActiveSubscription).not.toHaveBeenCalled();
+    });
+
+    it('lección de muestra de un curso PAGO → true (vista previa)', async () => {
+        const { service } = makeService();
+        await expect(
+            service.canAccessCourseContent(STUDENT, PAID_COURSE, FREE_LESSON),
+        ).resolves.toBe(true);
+    });
+
+    it('curso gratis, lección que no es de muestra, sin inscripción → false', async () => {
+        const { service } = makeService();
+        await expect(
+            service.canAccessCourseContent(STUDENT, FREE_COURSE, LOCKED_LESSON),
+        ).resolves.toBe(false);
+    });
+
+    it('curso gratis, lección que no es de muestra, con inscripción → true', async () => {
+        const { service, hasActiveEnrollment } = makeService();
+        hasActiveEnrollment.mockResolvedValueOnce(true);
+
+        await expect(
+            service.canAccessCourseContent(STUDENT, FREE_COURSE, LOCKED_LESSON),
+        ).resolves.toBe(true);
+        expect(hasActiveEnrollment).toHaveBeenCalledWith(STUDENT.id, FREE_COURSE.id);
     });
 
     it('curso pago, sin enrollment ni suscripción → false', async () => {
@@ -119,24 +146,26 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
         expect(hasActiveEnrollment).not.toHaveBeenCalled();
     });
 
-    it('instructor de OTRO curso → sigue la regla normal (false)', async () => {
-        const { service } = makeService();
+    it('TEACHER de OTRO curso → true (los docentes ven todo el catálogo)', async () => {
+        const { service, hasActiveEnrollment } = makeService();
 
         await expect(
             service.canAccessCourseContent(
                 { id: 'teacher-2', role: UserRole.TEACHER },
                 PAID_COURSE,
+                LOCKED_LESSON,
             ),
-        ).resolves.toBe(false);
+        ).resolves.toBe(true);
+        expect(hasActiveEnrollment).not.toHaveBeenCalled();
     });
 
-    it('si la relación instructor no vino en la query, no da acceso por error', async () => {
+    it('si la relación instructor no vino en la query, un alumno no gana acceso por error', async () => {
         const { service } = makeService();
         const courseSinInstructor = { id: 'c-paid', priceInCents: 4999 };
 
         await expect(
             service.canAccessCourseContent(
-                { id: INSTRUCTOR_ID, role: UserRole.TEACHER },
+                { id: INSTRUCTOR_ID, role: UserRole.STUDENT },
                 courseSinInstructor,
             ),
         ).resolves.toBe(false);

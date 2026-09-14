@@ -21,19 +21,28 @@ export interface AccessActor {
     role?: UserRole;
 }
 
+/** Lo que importa de la lección para el gate: si es de muestra. */
+export interface LessonAccessInfo {
+    isFree?: boolean;
+}
+
 /**
  * Resuelve si un usuario puede ver el CONTENIDO real (content/videoUrl, PDFs
- * adjuntos) de una lección, según el curso al que pertenece.
+ * adjuntos) de una lección, según la lección y el curso al que pertenece.
  *
  * Regla, en orden:
- *  - ADMIN → siempre sí. Administra el catálogo; exigirle inscripción haría
- *    que no pueda ver ni lo que él mismo carga.
+ *  - ADMIN o TEACHER → siempre sí. Administran/arman el catálogo; exigirles
+ *    inscripción haría que no puedan ver ni lo que cargan.
  *  - instructor del curso → siempre sí, por el mismo motivo.
- *  - curso gratis (priceInCents === 0) → sí. NO se exige enrollment: hoy nada
- *    crea una CourseEnrollment automática para cursos gratis, exigirla
- *    rompería todo lo que ya funciona.
- *  - curso pago → sí solo si el usuario tiene una inscripción ACTIVA a ese
- *    curso, o una suscripción ACTIVE (el plan da acceso a todo el catálogo).
+ *  - lección de muestra (`lesson.isFree`) → sí, en cualquier curso, gratis o
+ *    pago. Es la vista previa.
+ *  - el resto → sólo con inscripción ACTIVA a ese curso o una suscripción
+ *    ACTIVE (el plan da acceso a todo el catálogo). Vale también para los
+ *    cursos gratis: inscribirse es gratis (POST /course-enrollments) y el
+ *    front inscribe solo al entrar a una lección.
+ *
+ * `lesson` es opcional para no romper a quien pregunte sólo por el curso: sin
+ * ella no hay vista previa y aplica la regla de inscripción.
  */
 @Injectable()
 export class LessonsAccessService {
@@ -45,13 +54,14 @@ export class LessonsAccessService {
     async canAccessCourseContent(
         user: AccessActor,
         course: CourseAccessInfo | null | undefined,
+        lesson?: LessonAccessInfo | null,
     ): Promise<boolean> {
         if (!course || !user?.id) return false;
 
-        if (user.role === UserRole.ADMIN) return true;
+        if (user.role === UserRole.ADMIN || user.role === UserRole.TEACHER) return true;
         if (course.instructor?.id && course.instructor.id === user.id) return true;
 
-        if (course.priceInCents === 0) return true;
+        if (lesson?.isFree) return true;
 
         if (await this.enrollments.hasActiveEnrollment(user.id, course.id)) {
             return true;

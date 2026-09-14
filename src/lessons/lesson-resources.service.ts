@@ -83,6 +83,7 @@ export class LessonResourcesService {
         const hasAccess = await this.lessonsAccess.canAccessCourseContent(
             user,
             lesson.module?.course,
+            lesson,
         );
         if (!hasAccess) {
             throw new ForbiddenException(

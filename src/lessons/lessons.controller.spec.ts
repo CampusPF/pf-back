@@ -82,10 +82,12 @@ describe('LessonsController.findOne (gate de contenido)', () => {
         const user = { id: 'user-9', role: UserRole.STUDENT };
         await controller.findOne('lesson-1', user);
 
-        expect(canAccessCourseContent).toHaveBeenCalledWith(user, {
-            id: 'course-1',
-            priceInCents: 0,
-        });
+        // Con la lección como tercer argumento: `isFree` decide la vista previa.
+        expect(canAccessCourseContent).toHaveBeenCalledWith(
+            user,
+            { id: 'course-1', priceInCents: 0 },
+            expect.objectContaining({ id: 'lesson-1' }),
+        );
     });
 
     it('propaga el 404 de la lección inexistente', async () => {
