@@ -1,3 +1,5 @@
+import { ForbiddenException } from '@nestjs/common';
+import { UserRole } from '../users/entities/user.entity';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { StripeService } from './stripe.service';
@@ -108,5 +110,38 @@ describe('PaymentsController.handleWebhook', () => {
         );
 
         expect(res.status).toHaveBeenCalledWith(500);
+    });
+});
+
+describe('PaymentsController.createIntent (quién puede comprar)', () => {
+    function makeIntentController() {
+        const createIntent = jest.fn(async () => ({ clientSecret: 'pi_secret' }));
+        const controller = new PaymentsController(
+            { createIntent } as unknown as PaymentsService,
+            {} as StripeService,
+        );
+        return { controller, createIntent };
+    }
+
+    it.each([UserRole.ADMIN, UserRole.TEACHER])(
+        '%s → 403 sin crear el PaymentIntent (ya tiene acceso a todo)',
+        async (role) => {
+            const { controller, createIntent } = makeIntentController();
+
+            expect(() =>
+                controller.createIntent({ id: 'u1', role }, { planId: 'premium' } as any),
+            ).toThrow(ForbiddenException);
+            expect(createIntent).not.toHaveBeenCalled();
+        },
+    );
+
+    it('STUDENT → crea el PaymentIntent normalmente', async () => {
+        const { controller, createIntent } = makeIntentController();
+        const dto = { courseId: 'c1' } as any;
+
+        await expect(
+            controller.createIntent({ id: 'u1', role: UserRole.STUDENT }, dto),
+        ).resolves.toEqual({ clientSecret: 'pi_secret' });
+        expect(createIntent).toHaveBeenCalledWith('u1', dto);
     });
 });

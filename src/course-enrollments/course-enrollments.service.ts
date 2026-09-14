@@ -41,11 +41,15 @@ export class CourseEnrollmentsService {
    * al contenido de todo el catálogo; sin inscripción el suscriptor veía las
    * lecciones pero no podía registrar progreso (LessonProgress cuelga de la
    * inscripción). No regala nada que el plan no incluya.
+   *
+   * Lo mismo para ADMIN y TEACHER (`role`): ya ven el contenido de todo el
+   * catálogo (LessonsAccessService), y sin inscripción no guardaban progreso
+   * al recorrer un curso pago. No compran nada: el checkout les está cerrado.
    */
   async create(
     dto: CreateCourseEnrollmentDto,
     studentId: string,
-    { allowPaid = false }: { allowPaid?: boolean } = {},
+    { allowPaid = false, role }: { allowPaid?: boolean; role?: UserRole } = {},
   ): Promise<CourseEnrollment> {
     const course = await this.coursesRepository.findOne({
       where: { id: dto.courseId },
@@ -54,9 +58,11 @@ export class CourseEnrollmentsService {
       throw new NotFoundException(`Curso con id ${dto.courseId} no encontrado`);
     }
 
+    const isStaff = role === UserRole.ADMIN || role === UserRole.TEACHER;
     if (
       course.priceInCents > 0 &&
       !allowPaid &&
+      !isStaff &&
       !(await this.subscriptionsService.hasActiveSubscription(studentId))
     ) {
       throw new HttpException(
