@@ -12,6 +12,7 @@ import { CourseEnrollment } from './entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateCourseEnrollmentDto } from './dto/create-course-enrollment.dto';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 @Injectable()
 export class CourseEnrollmentsService {
@@ -22,6 +23,7 @@ export class CourseEnrollmentsService {
     private readonly coursesRepository: Repository<Course>,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
+    private readonly subscriptionsService: SubscriptionsService,
   ) { }
 
   /**
@@ -34,11 +36,20 @@ export class CourseEnrollmentsService {
    * puede inscribir por esta vía (responde 402): tiene que pasar por
    * POST /payments/create-intent y la inscripción la crea el webhook de
    * Stripe, que es el único que llama esto con `allowPaid: true`.
+   *
+   * Excepción: con una suscripción ACTIVE sí se puede. El plan ya da acceso
+   * al contenido de todo el catálogo; sin inscripción el suscriptor veía las
+   * lecciones pero no podía registrar progreso (LessonProgress cuelga de la
+   * inscripción). No regala nada que el plan no incluya.
+   *
+   * Lo mismo para ADMIN y TEACHER (`role`): ya ven el contenido de todo el
+   * catálogo (LessonsAccessService), y sin inscripción no guardaban progreso
+   * al recorrer un curso pago. No compran nada: el checkout les está cerrado.
    */
   async create(
     dto: CreateCourseEnrollmentDto,
     studentId: string,
-    { allowPaid = false }: { allowPaid?: boolean } = {},
+    { allowPaid = false, role }: { allowPaid?: boolean; role?: UserRole } = {},
   ): Promise<CourseEnrollment> {
     const course = await this.coursesRepository.findOne({
       where: { id: dto.courseId },
@@ -47,7 +58,13 @@ export class CourseEnrollmentsService {
       throw new NotFoundException(`Curso con id ${dto.courseId} no encontrado`);
     }
 
-    if (course.priceInCents > 0 && !allowPaid) {
+    const isStaff = role === UserRole.ADMIN || role === UserRole.TEACHER;
+    if (
+      course.priceInCents > 0 &&
+      !allowPaid &&
+      !isStaff &&
+      !(await this.subscriptionsService.hasActiveSubscription(studentId))
+    ) {
       throw new HttpException(
         'Este curso es pago. Iniciá el pago con POST /payments/create-intent.',
         HttpStatus.PAYMENT_REQUIRED,

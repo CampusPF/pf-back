@@ -9,6 +9,7 @@ import {
     Logger,
     Param,
     BadRequestException,
+    ForbiddenException,
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -20,6 +21,7 @@ import { StripeService } from './stripe.service';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @ApiTags('payments')
 @Controller('payments')
@@ -40,12 +42,21 @@ export class PaymentsController {
     })
     @ApiResponse({ status: 200, description: '{ clientSecret } del PaymentIntent' })
     @ApiResponse({ status: 400, description: 'Curso/plan gratis, o body inválido' })
+    @ApiResponse({ status: 403, description: 'ADMIN y TEACHER no compran: ya tienen acceso a todo' })
     @ApiResponse({ status: 409, description: 'Ya inscripto / ya suscripto' })
     createIntent(
-        @CurrentUser('id') userId: string,
+        @CurrentUser() user: { id: string; role: UserRole },
         @Body() dto: CreateIntentDto,
     ) {
-        return this.paymentsService.createIntent(userId, dto);
+        // Admin y teacher ven todo el catálogo y se inscriben sin pagar
+        // (ver CourseEnrollmentsService.create): cobrarles sería un error. El
+        // front ya no les muestra el checkout; esto cubre la llamada directa.
+        if (user.role === UserRole.ADMIN || user.role === UserRole.TEACHER) {
+            throw new ForbiddenException(
+                'Tu rol ya tiene acceso a todos los cursos: no hace falta comprar.',
+            );
+        }
+        return this.paymentsService.createIntent(user.id, dto);
     }
 
     /**
