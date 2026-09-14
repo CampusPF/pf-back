@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Writable } from 'stream';
 
 /**
  * El SDK se mockea entero: acá se prueban las OPCIONES con las que se lo
@@ -10,9 +11,13 @@ import { ConfigService } from '@nestjs/config';
  * un stream; con que sea un Writable alcanza. El callback se dispara en el
  * momento para resolver la promesa.
  */
+// Los parámetros se declaran como rest `unknown[]` para que el wrapper del
+// jest.mock pueda reenviarles `...args` y para que `.mock.calls` quede tipado.
 const uploadStream = jest.fn();
-const destroy = jest.fn(async () => ({ result: 'ok' }));
-const privateDownloadUrl = jest.fn(() => 'https://signed.example/file.pdf');
+const destroy = jest.fn(async (..._args: unknown[]) => ({ result: 'ok' }));
+const privateDownloadUrl = jest.fn(
+    (..._args: unknown[]) => 'https://signed.example/file.pdf',
+);
 const configure = jest.fn();
 
 jest.mock('cloudinary', () => ({
@@ -31,12 +36,15 @@ jest.mock('cloudinary', () => ({
 // Se importa DESPUÉS del jest.mock para que tome el módulo mockeado.
 import { CloudinaryService } from './cloudinary.service';
 
-const { Writable } = require('stream');
+/** Writable que acepta todo y no hace nada: el destino del pipe del service. */
+function nullSink(): Writable {
+    return new Writable({ write: (_chunk, _encoding, done) => done() });
+}
 
 /** Simula una subida exitosa devolviendo `response` al callback. */
 function mockUploadResult(response: Record<string, unknown>) {
     uploadStream.mockImplementation((_options, callback) => {
-        const sink = new Writable({ write: (_c, _e, cb) => cb() });
+        const sink = nullSink();
         sink.on('finish', () => callback(null, response));
         return sink;
     });
@@ -178,10 +186,9 @@ describe('CloudinaryService configurado', () => {
     });
 
     it('replaceImage sube la nueva ANTES de borrar la vieja', async () => {
-        mockUploadResult({ public_id: 'nuevo', secure_url: 'https://res/nuevo.jpg' });
         const order: string[] = [];
         uploadStream.mockImplementation((_options, callback) => {
-            const sink = new Writable({ write: (_c, _e, cb) => cb() });
+            const sink = nullSink();
             sink.on('finish', () => {
                 order.push('upload');
                 callback(null, { public_id: 'nuevo', secure_url: 'https://res/nuevo.jpg' });
