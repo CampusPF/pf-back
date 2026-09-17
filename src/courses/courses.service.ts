@@ -7,7 +7,11 @@ import { User } from '../users/entities/user.entity';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { generateUniqueSlug } from './utils/slug.util';
-import { Actor, assertCourseOwner } from '../common/utils/assert-course-owner.util';
+import {
+  Actor,
+  assertCanRemoveCourse,
+  assertCourseOwner,
+} from '../common/utils/assert-course-owner.util';
 import {
   CloudinaryService,
   UPLOAD_FOLDERS,
@@ -157,14 +161,15 @@ export class CoursesService {
    */
   async remove(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
-    assertCourseOwner(course, actor);
+    // Lo único que el ADMIN puede hacer sobre un curso (además de restaurarlo).
+    assertCanRemoveCourse(course, actor);
     course.isActive = false;
     return this.coursesRepository.save(course);
   }
 
   async restore(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
-    assertCourseOwner(course, actor);
+    assertCanRemoveCourse(course, actor);
     course.isActive = true;
     return this.coursesRepository.save(course);
   }

@@ -63,12 +63,20 @@ export class PaymentsService {
         userId: string,
         courseId: string,
     ): Promise<{ clientSecret: string }> {
-        const course = await this.coursesRepository.findOne({ where: { id: courseId } });
+        const course = await this.coursesRepository.findOne({
+            where: { id: courseId },
+            relations: { instructor: true },
+        });
         if (!course) {
             throw new NotFoundException(`Curso con id ${courseId} no encontrado`);
         }
         if (course.priceInCents <= 0) {
             throw new BadRequestException('Este curso es gratis: no requiere pago.');
+        }
+        // Un docente ya tiene acceso a lo que dicta: cobrarle su propio curso
+        // sería un error (y Stripe le cobraría de verdad).
+        if (course.instructor?.id === userId) {
+            throw new ConflictException('Este curso es tuyo: ya tenés acceso sin comprarlo.');
         }
         if (await this.enrollmentsService.hasActiveEnrollment(userId, courseId)) {
             throw new ConflictException('Ya estás inscripto en este curso');

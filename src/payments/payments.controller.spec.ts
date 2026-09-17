@@ -123,17 +123,23 @@ describe('PaymentsController.createIntent (quién puede comprar)', () => {
         return { controller, createIntent };
     }
 
-    it.each([UserRole.ADMIN, UserRole.TEACHER])(
-        '%s → 403 sin crear el PaymentIntent (ya tiene acceso a todo)',
-        async (role) => {
-            const { controller, createIntent } = makeIntentController();
+    it('ADMIN → 403 sin crear el PaymentIntent (ya tiene acceso a todo)', async () => {
+        const { controller, createIntent } = makeIntentController();
 
-            expect(() =>
-                controller.createIntent({ id: 'u1', role }, { planId: 'premium' } as any),
-            ).toThrow(ForbiddenException);
-            expect(createIntent).not.toHaveBeenCalled();
-        },
-    );
+        expect(() =>
+            controller.createIntent({ id: 'u1', role: UserRole.ADMIN }, { planId: 'premium' } as any),
+        ).toThrow(ForbiddenException);
+        expect(createIntent).not.toHaveBeenCalled();
+    });
+
+    // Un docente sólo tiene gratis lo gratuito y lo suyo: el resto lo compra.
+    it('TEACHER → crea el PaymentIntent como cualquier alumno', async () => {
+        const { controller, createIntent } = makeIntentController();
+        const dto = { courseId: 'c1' } as any;
+
+        await controller.createIntent({ id: 't1', role: UserRole.TEACHER }, dto);
+        expect(createIntent).toHaveBeenCalledWith('t1', dto);
+    });
 
     it('STUDENT → crea el PaymentIntent normalmente', async () => {
         const { controller, createIntent } = makeIntentController();

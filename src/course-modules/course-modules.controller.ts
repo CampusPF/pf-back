@@ -21,8 +21,8 @@ export class CourseModulesController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @Roles(UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   create(
     @Body() createCourseModuleDto: CreateCourseModuleDto,
     @CurrentUser() user: { id: string; role: UserRole },
@@ -42,8 +42,8 @@ export class CourseModulesController {
 
   @Patch(':id')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @Roles(UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   update(
     @Param('id') id: string,
     @Body() updateCourseModuleDto: UpdateCourseModuleDto,
@@ -54,16 +54,16 @@ export class CourseModulesController {
 
   @Patch(':id/restore')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @Roles(UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   restore(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
     return this.courseModulesService.restore(id, user);
   }
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @Roles(UserRole.TEACHER)
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   remove(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
     return this.courseModulesService.remove(id, user);
   }

@@ -42,16 +42,19 @@ export class PaymentsController {
     })
     @ApiResponse({ status: 200, description: '{ clientSecret } del PaymentIntent' })
     @ApiResponse({ status: 400, description: 'Curso/plan gratis, o body inválido' })
-    @ApiResponse({ status: 403, description: 'ADMIN y TEACHER no compran: ya tienen acceso a todo' })
-    @ApiResponse({ status: 409, description: 'Ya inscripto / ya suscripto' })
+    @ApiResponse({ status: 403, description: 'El ADMIN no compra: ya tiene acceso a todo' })
+    @ApiResponse({ status: 409, description: 'Ya inscripto / ya suscripto / es tu propio curso' })
     createIntent(
         @CurrentUser() user: { id: string; role: UserRole },
         @Body() dto: CreateIntentDto,
     ) {
-        // Admin y teacher ven todo el catálogo y se inscriben sin pagar
-        // (ver CourseEnrollmentsService.create): cobrarles sería un error. El
-        // front ya no les muestra el checkout; esto cubre la llamada directa.
-        if (user.role === UserRole.ADMIN || user.role === UserRole.TEACHER) {
+        // El admin ve todo el catálogo y se inscribe sin pagar (ver
+        // CourseEnrollmentsService.create): cobrarle sería un error. El front
+        // no le muestra el checkout; esto cubre la llamada directa.
+        //
+        // El TEACHER sí compra: sólo tiene gratis los cursos gratuitos y los
+        // suyos. Comprar uno propio lo frena el service con un 409.
+        if (user.role === UserRole.ADMIN) {
             throw new ForbiddenException(
                 'Tu rol ya tiene acceso a todos los cursos: no hace falta comprar.',
             );
