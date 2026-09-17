@@ -5,7 +5,9 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Repository } from 'typeorm';
+import { EVENTS, LessonCompletedEvent, CourseCompletedEvent } from '../events';
 import { LessonProgress } from './entities/lesson-progress.entity';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
@@ -22,12 +24,14 @@ export class LessonProgressService {
     private readonly enrollmentsRepository: Repository<CourseEnrollment>,
     @InjectRepository(Lesson)
     private readonly lessonsRepository: Repository<Lesson>,
+    private readonly eventEmitter: EventEmitter2,
   ) { }
 
   async create(dto: CreateLessonProgressDto, userId: string): Promise<LessonProgress> {
     const enrollment = await this.enrollmentsRepository.findOne({
       where: { id: dto.enrollmentId },
-      relations: { student: true },
+      // `course` se trae para poder poner courseId en los eventos de dominio.
+      relations: { student: true, course: true },
     });
     if (!enrollment) {
       throw new NotFoundException(`Inscripción con id ${dto.enrollmentId} no encontrada`);
@@ -61,8 +65,22 @@ export class LessonProgressService {
       completedAt: completed ? new Date() : null,
     });
 
+    // Se lee ANTES del recálculo: es el estado del que se parte para saber si
+    // el curso terminó recién ahora o ya estaba terminado.
+    const courseWasComplete = enrollment.progressPercent >= 100;
+
     const saved = await this.lessonProgressRepository.save(progress);
-    await this.recalculateEnrollmentProgress(enrollment.id);
+    const percent = await this.recalculateEnrollmentProgress(enrollment.id);
+
+    if (completed) {
+      this.publishLessonCompleted(
+        enrollment.student.id,
+        enrollment.course.id,
+        lesson.id,
+        percent,
+        courseWasComplete,
+      );
+    }
 
     return saved;
   }
@@ -94,7 +112,7 @@ export class LessonProgressService {
   async findOne(id: string): Promise<LessonProgress> {
     const progress = await this.lessonProgressRepository.findOne({
       where: { id },
-      relations: { enrollment: { student: true }, lesson: true },
+      relations: { enrollment: { student: true, course: true }, lesson: true },
     });
 
     if (!progress) {
@@ -128,13 +146,30 @@ export class LessonProgressService {
 
     const completed = dto.completed ?? progress.completed;
 
+    /* Estado ANTERIOR, antes de pisarlo con Object.assign. Es lo que evita
+       que volver a pegarle al endpoint con completed:true sume racha y horas
+       otra vez: sin esto, cada PATCH repetido duplicaría todo lo que cuelgue
+       del evento (racha, XP, logros, mails). */
+    const wasCompleted = progress.completed;
+    const courseWasComplete = progress.enrollment.progressPercent >= 100;
+
     Object.assign(progress, {
       completed,
       completedAt: completed ? (progress.completedAt ?? new Date()) : null,
     });
 
     const saved = await this.lessonProgressRepository.save(progress);
-    await this.recalculateEnrollmentProgress(progress.enrollment.id);
+    const percent = await this.recalculateEnrollmentProgress(progress.enrollment.id);
+
+    if (completed && !wasCompleted) {
+      this.publishLessonCompleted(
+        progress.enrollment.student.id,
+        progress.enrollment.course.id,
+        progress.lesson.id,
+        percent,
+        courseWasComplete,
+      );
+    }
 
     return saved;
   }
@@ -167,7 +202,41 @@ export class LessonProgressService {
    *
    * Son dos COUNT fijos, sin N+1 y sin traer una sola lección a memoria.
    */
-  private async recalculateEnrollmentProgress(enrollmentId: string): Promise<void> {
+  /**
+   * Publica los eventos de dominio de una completitud.
+   *
+   * Este service NO sabe qué pasa después: quién suma racha, horas, XP o manda
+   * un mail es problema de los listeners. Acá solo se avisa que ocurrió el
+   * hecho, y por eso marcar una lección no vuelve a tocarse cada vez que
+   * gamificación crece.
+   *
+   * No es async a propósito: `emit()` de EventEmitter2 es síncrono y los
+   * listeners async se manejan solos. Si un listener rompe, NO debe tumbar el
+   * marcado de la lección — ese es el hecho importante y ya está guardado.
+   */
+  private publishLessonCompleted(
+    userId: string,
+    courseId: string,
+    lessonId: string,
+    percent: number,
+    courseWasComplete: boolean,
+  ): void {
+    this.eventEmitter.emit(
+      EVENTS.LESSON_COMPLETED,
+      new LessonCompletedEvent(userId, lessonId, courseId),
+    );
+
+    // Solo en la transición a 100%: si el curso ya estaba terminado, completar
+    // una lección más (o una lección nueva del docente) no vuelve a "terminarlo".
+    if (percent >= 100 && !courseWasComplete) {
+      this.eventEmitter.emit(
+        EVENTS.COURSE_COMPLETED,
+        new CourseCompletedEvent(userId, courseId),
+      );
+    }
+  }
+
+  private async recalculateEnrollmentProgress(enrollmentId: string): Promise<number> {
     const totalRow = await this.lessonsRepository
       .createQueryBuilder('lesson')
       .innerJoin('lesson.module', 'module')
@@ -207,6 +276,10 @@ export class LessonProgressService {
         completedAt: percent >= 100 ? new Date() : null,
       },
     );
+
+    // Se devuelve para que quien llamó sepa si se llegó al 100% sin volver a
+    // consultar la inscripción.
+    return percent;
   }
 
   /**
