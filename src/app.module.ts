@@ -11,6 +11,7 @@ import { LessonProgressModule } from './lesson-progress/lesson-progress.module';
 import { UserActivityModule } from './user-activity/user-activity.module';
 import { ProgressTrackingModule } from './progress-tracking/progress-tracking.module';
 import { CourseEnrollmentsModule } from './course-enrollments/course-enrollments.module';
+import { CourseReviewsModule } from './course-reviews/course-reviews.module';
 import { AuthModule } from './auth/auth.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -95,6 +96,7 @@ import { CategoriesService } from './categories/categories.service';
     CourseModulesModule,
     LessonsModule,
     CourseEnrollmentsModule,
+    CourseReviewsModule,
     LessonProgressModule,
     UserActivityModule,
     ProgressTrackingModule,

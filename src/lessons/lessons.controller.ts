@@ -43,10 +43,10 @@ export class LessonsController {
   @Post()
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Roles(UserRole.TEACHER)
   @ApiOperation({ summary: 'Crear una lección dentro de un módulo' })
   @ApiResponse({ status: 201, description: 'Lección creada correctamente' })
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   @ApiResponse({ status: 404, description: 'Módulo no encontrado' })
   create(
     @Body() dto: CreateLessonDto,
@@ -76,7 +76,8 @@ export class LessonsController {
       '(lección que no es de muestra, sin inscripción activa al curso ni ' +
       'suscripción ACTIVE), devuelve content y videoUrl en null y ' +
       'hasAccess:false. Título/orden/módulo van siempre, para poder mostrar un ' +
-      'CTA. Admin, teacher e instructor del curso siempre tienen acceso.',
+      'CTA. El admin y el instructor del curso siempre tienen acceso; otro ' +
+      'docente, como cualquier alumno.',
   })
   @ApiResponse({ status: 404, description: 'Lección no encontrada' })
   async findOne(
@@ -102,9 +103,9 @@ export class LessonsController {
   @Patch(':id')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Roles(UserRole.TEACHER)
   @ApiOperation({ summary: 'Actualizar una lección' })
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   update(
     @Param('id') id: string,
     @Body() dto: UpdateLessonDto,
@@ -116,9 +117,9 @@ export class LessonsController {
   @Patch(':id/restore')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Roles(UserRole.TEACHER)
   @ApiOperation({ summary: 'Reactivar una lección previamente eliminada' })
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   restore(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
     return this.lessonsService.restore(id, user);
   }
@@ -126,9 +127,9 @@ export class LessonsController {
   @Delete(':id')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Roles(UserRole.TEACHER)
   @ApiOperation({ summary: 'Eliminar una lección (borrado lógico)' })
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo (el ADMIN no edita contenido)' })
   remove(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
     return this.lessonsService.remove(id, user);
   }
