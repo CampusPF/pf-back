@@ -50,7 +50,8 @@ export class CourseEnrollmentsController {
     @CurrentUser() user: { id: string; role: UserRole },
   ) {
     // allowPaid queda en false: la inscripción paga la crea PaymentsService
-    // desde el webhook. Suscripción activa y rol staff los resuelve el service.
+    // desde el webhook. Suscripción activa, admin y docente en su propio curso
+    // los resuelve el service.
     return this.courseEnrollmentsService.create(createCourseEnrollmentDto, user.id, {
       role: user.role,
     });

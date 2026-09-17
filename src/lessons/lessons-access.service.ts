@@ -31,9 +31,13 @@ export interface LessonAccessInfo {
  * adjuntos) de una lección, según la lección y el curso al que pertenece.
  *
  * Regla, en orden:
- *  - ADMIN o TEACHER → siempre sí. Administran/arman el catálogo; exigirles
- *    inscripción haría que no puedan ver ni lo que cargan.
- *  - instructor del curso → siempre sí, por el mismo motivo.
+ *  - ADMIN → siempre sí. No edita cursos, pero decide si eliminarlos, y para
+ *    eso necesita poder ver qué contienen.
+ *  - instructor del curso → siempre sí: exigirle inscripción haría que no
+ *    pueda ver ni lo que carga.
+ *  - un TEACHER que NO es el instructor no tiene pase libre: cursa como
+ *    cualquier alumno (gratis, comprado o con Premium). Antes veía todo el
+ *    catálogo pago de sus colegas sin pagar.
  *  - lección de muestra (`lesson.isFree`) → sí, en cualquier curso, gratis o
  *    pago. Es la vista previa.
  *  - el resto → sólo con inscripción ACTIVA a ese curso o una suscripción
@@ -58,7 +62,7 @@ export class LessonsAccessService {
     ): Promise<boolean> {
         if (!course || !user?.id) return false;
 
-        if (user.role === UserRole.ADMIN || user.role === UserRole.TEACHER) return true;
+        if (user.role === UserRole.ADMIN) return true;
         if (course.instructor?.id && course.instructor.id === user.id) return true;
 
         if (lesson?.isFree) return true;

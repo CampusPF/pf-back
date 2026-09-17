@@ -25,6 +25,7 @@ import {
   assertFilePresent,
 } from '../file-upload/file-validation';
 import { CoursesService } from './courses.service';
+import { CourseStatsService } from './course-stats.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -38,12 +39,17 @@ import { UserRole } from '../users/entities/user.entity';
 @ApiBearerAuth()
 @Controller('courses')
 export class CoursesController {
-  constructor(private readonly coursesService: CoursesService) { }
+  constructor(
+    private readonly coursesService: CoursesService,
+    private readonly courseStatsService: CourseStatsService,
+  ) { }
 
+  // Crear, editar y cambiar la portada: sólo TEACHER. El ADMIN no arma ni
+  // modifica cursos (contenido, precio, nada): sólo los elimina o restaura.
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiOperation({ summary: 'Crear un nuevo curso' })
+  @Roles(UserRole.TEACHER)
+  @ApiOperation({ summary: 'Crear un nuevo curso (sólo docentes)' })
   @ApiResponse({ status: 201, description: 'Curso creado exitosamente' })
   @ApiResponse({ status: 404, description: 'Categoría o Instructor no encontrado' })
   create(
@@ -58,24 +64,34 @@ export class CoursesController {
   // El catálogo de cursos es la vitrina del sitio: el front lo muestra sin
   // login, así que se marca @Public() de forma explícita ahora que el
   // JwtAuthGuard es global.
+  // Las stats (ratingAverage, reviewsCount, studentsCount) se agregan acá y
+  // no en CoursesService.findOne/findAll: esos también los usan las
+  // escrituras (update, restore…), que no necesitan dos queries de más.
   @Get()
   @Public()
-  @ApiOperation({ summary: 'Obtener todos los cursos' })
-  findAll(@Query('includeInactive') includeInactive?: string) {
-    return this.coursesService.findAll(includeInactive === 'true');
+  @ApiOperation({
+    summary: 'Obtener todos los cursos',
+    description: 'Cada curso incluye ratingAverage (null sin reseñas), reviewsCount y studentsCount.',
+  })
+  async findAll(@Query('includeInactive') includeInactive?: string) {
+    const courses = await this.coursesService.findAll(includeInactive === 'true');
+    return this.courseStatsService.withStats(courses);
   }
 
   @Get(':id')
   @Public()
-  @ApiOperation({ summary: 'Obtener un curso por ID' })
+  @ApiOperation({ summary: 'Obtener un curso por ID (con ratingAverage, reviewsCount y studentsCount)' })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
-  findOne(@Param('id') id: string) {
-    return this.coursesService.findOne(id);
+  async findOne(@Param('id') id: string) {
+    const [course] = await this.courseStatsService.withStats([
+      await this.coursesService.findOne(id),
+    ]);
+    return course;
   }
 
   @Post(':id/image')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Roles(UserRole.TEACHER)
   @UseInterceptors(FileInterceptor('file', IMAGE_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -98,7 +114,7 @@ export class CoursesController {
       'borra. Devuelve el curso actualizado.',
   })
   @ApiResponse({ status: 400, description: 'Archivo faltante, muy grande o que no es una imagen' })
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo, o sos ADMIN' })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   @ApiResponse({ status: 503, description: 'Cloudinary no configurado' })
   updateImage(
@@ -112,9 +128,9 @@ export class CoursesController {
   @Patch(':id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiOperation({ summary: 'Actualizar un curso' })
-  @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
+  @Roles(UserRole.TEACHER)
+  @ApiOperation({ summary: 'Actualizar un curso (sólo su instructor)' })
+  @ApiResponse({ status: 403, description: 'El curso no es tuyo, o sos ADMIN' })
   @ApiResponse({ status: 404, description: 'Curso o Categoría no encontrada' })
   update(
     @Param('id') id: string,
@@ -128,7 +144,7 @@ export class CoursesController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiOperation({ summary: 'Reactivar un curso previamente eliminado' })
+  @ApiOperation({ summary: 'Reactivar un curso previamente eliminado (su instructor o ADMIN)' })
   @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
   restore(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {
     return this.coursesService.restore(id, user);
@@ -138,7 +154,7 @@ export class CoursesController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  @ApiOperation({ summary: 'Eliminar un curso (borrado lógico)' })
+  @ApiOperation({ summary: 'Eliminar un curso (borrado lógico; su instructor o ADMIN)' })
   @ApiResponse({ status: 403, description: 'El curso no es tuyo (sólo aplica a TEACHER)' })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   remove(@Param('id') id: string, @CurrentUser() user: { id: string; role: UserRole }) {

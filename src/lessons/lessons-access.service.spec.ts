@@ -146,7 +146,9 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
         expect(hasActiveEnrollment).not.toHaveBeenCalled();
     });
 
-    it('TEACHER de OTRO curso → true (los docentes ven todo el catálogo)', async () => {
+    // Un docente sólo tiene gratis los cursos gratuitos y los suyos: en un curso
+    // pago de otro es un alumno más.
+    it('TEACHER de OTRO curso pago, sin inscripción ni suscripción → false', async () => {
         const { service, hasActiveEnrollment } = makeService();
 
         await expect(
@@ -155,8 +157,21 @@ describe('LessonsAccessService.canAccessCourseContent', () => {
                 PAID_COURSE,
                 LOCKED_LESSON,
             ),
+        ).resolves.toBe(false);
+        expect(hasActiveEnrollment).toHaveBeenCalledWith('teacher-2', PAID_COURSE.id);
+    });
+
+    it('TEACHER de OTRO curso pago que lo compró → true', async () => {
+        const { service, hasActiveEnrollment } = makeService();
+        hasActiveEnrollment.mockResolvedValueOnce(true);
+
+        await expect(
+            service.canAccessCourseContent(
+                { id: 'teacher-2', role: UserRole.TEACHER },
+                PAID_COURSE,
+                LOCKED_LESSON,
+            ),
         ).resolves.toBe(true);
-        expect(hasActiveEnrollment).not.toHaveBeenCalled();
     });
 
     it('si la relación instructor no vino en la query, un alumno no gana acceso por error', async () => {

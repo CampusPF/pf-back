@@ -163,7 +163,7 @@ describe('LessonResourcesService.create', () => {
         } as Express.Multer.File;
 
         await expect(
-            service.create(LESSON_ID, noEsPdf, undefined, ADMIN),
+            service.create(LESSON_ID, noEsPdf, undefined, OWNER_TEACHER),
         ).rejects.toThrow();
         expect(uploadPrivateFile).not.toHaveBeenCalled();
     });
@@ -176,7 +176,7 @@ describe('LessonResourcesService.create', () => {
             mimetype: 'application/pdf',
         } as Express.Multer.File;
 
-        await service.create(LESSON_ID, pdf, undefined, ADMIN);
+        await service.create(LESSON_ID, pdf, undefined, OWNER_TEACHER);
 
         expect(repo.create).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -198,7 +198,7 @@ describe('LessonResourcesService.create', () => {
         } as Express.Multer.File;
 
         await expect(
-            service.create(LESSON_ID, pdf, undefined, ADMIN),
+            service.create(LESSON_ID, pdf, undefined, OWNER_TEACHER),
         ).rejects.toThrow(NotFoundException);
         expect(uploadPrivateFile).not.toHaveBeenCalled();
     });
@@ -229,13 +229,27 @@ describe('LessonResourcesService.create', () => {
         ).rejects.toThrow(ForbiddenException);
         expect(uploadPrivateFile).not.toHaveBeenCalled();
     });
+
+    it('el ADMIN → 403 sin subir nada (no edita contenido de cursos)', async () => {
+        const { service, uploadPrivateFile } = makeService();
+        const pdf = {
+            buffer: Buffer.from('%PDF-1.7'),
+            originalname: 'clase-3.pdf',
+            mimetype: 'application/pdf',
+        } as Express.Multer.File;
+
+        await expect(
+            service.create(LESSON_ID, pdf, undefined, ADMIN),
+        ).rejects.toThrow(ForbiddenException);
+        expect(uploadPrivateFile).not.toHaveBeenCalled();
+    });
 });
 
 describe('LessonResourcesService.remove', () => {
     it('borra primero en Cloudinary y después la fila', async () => {
         const { service, destroy, repo } = makeService();
 
-        await service.remove(LESSON_ID, RESOURCE_ID, ADMIN);
+        await service.remove(LESSON_ID, RESOURCE_ID, OWNER_TEACHER);
 
         expect(destroy).toHaveBeenCalledWith(
             RESOURCE.publicId,
@@ -247,7 +261,7 @@ describe('LessonResourcesService.remove', () => {
 
     it('recurso inexistente → 404', async () => {
         const { service } = makeService({ resource: null });
-        await expect(service.remove(LESSON_ID, RESOURCE_ID, ADMIN)).rejects.toThrow(
+        await expect(service.remove(LESSON_ID, RESOURCE_ID, OWNER_TEACHER)).rejects.toThrow(
             NotFoundException,
         );
     });
@@ -258,6 +272,16 @@ describe('LessonResourcesService.remove', () => {
         await expect(
             service.remove(LESSON_ID, RESOURCE_ID, OTHER_TEACHER),
         ).rejects.toThrow(ForbiddenException);
+        expect(destroy).not.toHaveBeenCalled();
+        expect(repo.remove).not.toHaveBeenCalled();
+    });
+
+    it('el ADMIN → 403 sin borrar nada', async () => {
+        const { service, destroy, repo } = makeService();
+
+        await expect(service.remove(LESSON_ID, RESOURCE_ID, ADMIN)).rejects.toThrow(
+            ForbiddenException,
+        );
         expect(destroy).not.toHaveBeenCalled();
         expect(repo.remove).not.toHaveBeenCalled();
     });

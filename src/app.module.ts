@@ -8,7 +8,10 @@ import { CoursesModule } from './courses/courses.module';
 import { CourseModulesModule } from './course-modules/course-modules.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { LessonProgressModule } from './lesson-progress/lesson-progress.module';
+import { UserActivityModule } from './user-activity/user-activity.module';
+import { ProgressTrackingModule } from './progress-tracking/progress-tracking.module';
 import { CourseEnrollmentsModule } from './course-enrollments/course-enrollments.module';
+import { CourseReviewsModule } from './course-reviews/course-reviews.module';
 import { AuthModule } from './auth/auth.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -16,6 +19,7 @@ import { AiTutorModule } from './aiTutor/aiTutor.module';
 import { MiddlewareConsumer, Module, NestModule, OnApplicationBootstrap } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { envValidationSchema } from './config/env.validation';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -23,6 +27,11 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { UserOrIpThrottlerGuard } from './common/guards/user-or-ip-throttler.guard';
 import { HealthModule } from './health/health.module';
 import { FileUploadModule } from './file-upload/file-upload.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { CertificatesModule } from './certificates/certificates.module';
+import { QuizzesModule } from './quizzes/quizzes.module';
+import { AchievementsModule } from './achievements/achievements.module';
+import { GamificationModule } from './gamification/gamification.module';
 import { CategoriesService } from './categories/categories.service';
 
 
@@ -81,6 +90,10 @@ import { CategoriesService } from './categories/categories.service';
         ],
       }),
     }),
+    /* Bus de eventos de dominio (en proceso, en memoria).
+       Lo usa lesson-progress para avisar "se completó una lección" sin saber
+       quién escucha (racha, horas, y más adelante XP/logros/mails). */
+    EventEmitterModule.forRoot(),
     HealthModule,
     UsersModule,
     CategoriesModule,
@@ -88,12 +101,21 @@ import { CategoriesService } from './categories/categories.service';
     CourseModulesModule,
     LessonsModule,
     CourseEnrollmentsModule,
+    CourseReviewsModule,
     LessonProgressModule,
+    UserActivityModule,
+    ProgressTrackingModule,
     AuthModule,
     SubscriptionsModule,
     PaymentsModule,
     AiTutorModule,
-    FileUploadModule
+    FileUploadModule,
+    // Por ahora solo registran entidades (sin services ni endpoints).
+    NotificationsModule,
+    CertificatesModule,
+    QuizzesModule,
+    AchievementsModule,
+    GamificationModule,
   ],
   controllers: [AppController],
   providers: [
