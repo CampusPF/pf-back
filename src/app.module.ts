@@ -27,6 +27,11 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { UserOrIpThrottlerGuard } from './common/guards/user-or-ip-throttler.guard';
 import { HealthModule } from './health/health.module';
 import { FileUploadModule } from './file-upload/file-upload.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { CertificatesModule } from './certificates/certificates.module';
+import { QuizzesModule } from './quizzes/quizzes.module';
+import { AchievementsModule } from './achievements/achievements.module';
+import { GamificationModule } from './gamification/gamification.module';
 import { CategoriesService } from './categories/categories.service';
 
 
@@ -104,7 +109,13 @@ import { CategoriesService } from './categories/categories.service';
     SubscriptionsModule,
     PaymentsModule,
     AiTutorModule,
-    FileUploadModule
+    FileUploadModule,
+    // Por ahora solo registran entidades (sin services ni endpoints).
+    NotificationsModule,
+    CertificatesModule,
+    QuizzesModule,
+    AchievementsModule,
+    GamificationModule,
   ],
   controllers: [AppController],
   providers: [
