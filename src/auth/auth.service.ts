@@ -1,13 +1,25 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+    Injectable,
+    Logger,
+    UnauthorizedException,
+    ConflictException,
+    BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { normalizeEmail } from '../common/utils/normalize-email.util';
+import { ResetTokenService } from './reset-token.service';
+import { MailService } from '../mail/mail.service';
+import { resetPasswordEmail } from '../mail/templates/reset-password.template';
 
 /** Código de Postgres para "unique_violation". */
 const POSTGRES_UNIQUE_VIOLATION = '23505';
@@ -29,13 +41,25 @@ interface GoogleUserPayload {
  */
 export type GoogleAuthFlow = 'login' | 'register';
 
+/**
+ * Respuesta ÚNICA de forgot-password, exista o no la cuenta. Es lo que evita
+ * que el endpoint sirva para averiguar qué emails están registrados.
+ */
+const FORGOT_PASSWORD_MESSAGE =
+    'Si el correo está registrado, te enviamos las instrucciones.';
+
 @Injectable()
 export class AuthService {
+    private readonly logger = new Logger(AuthService.name);
+
     constructor(
         private readonly usersService: UsersService,
         private readonly jwtService: JwtService,
         @InjectRepository(User)
         private readonly usersRepository: Repository<User>,
+        private readonly resetTokenService: ResetTokenService,
+        private readonly mailService: MailService,
+        private readonly config: ConfigService,
     ) { }
 
     async register(dto: RegisterDto) {
@@ -211,5 +235,84 @@ export class AuthService {
                 role: user.role,
             },
         };
+    }
+
+    /**
+     * Arranca el flujo de recuperación: si la cuenta existe, le manda el mail
+     * con el link; si no, no hace nada. En los dos casos devuelve LO MISMO.
+     *
+     * Dos decisiones de seguridad que conviene no "simplificar" después:
+     *
+     *  - La respuesta es idéntica exista o no el email. Si dijera "no
+     *    encontramos esa cuenta", el endpoint se convertiría en una forma
+     *    cómoda de averiguar qué direcciones están registradas.
+     *  - El envío del mail NO se espera (`void` + `.catch()`). Si Brevo está
+     *    lento o caído, el usuario igual recibe su respuesta al instante. El
+     *    error queda en el log. Como efecto secundario, el tiempo de respuesta
+     *    tampoco delata si la cuenta existía (mandar el mail tarda bastante
+     *    más que no mandarlo).
+     */
+    async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
+        const user = await this.usersService.findByEmail(dto.email);
+
+        if (user) {
+            const token = this.resetTokenService.generate(
+                user.id,
+                user.passwordHash ?? null,
+            );
+            const resetUrl = `${this.frontendBaseUrl()}/reset-password?token=${token}`;
+
+            void this.mailService
+                .send(
+                    user.email,
+                    'Recuperá tu contraseña — Campus',
+                    resetPasswordEmail(user.name, resetUrl),
+                )
+                .catch((error: unknown) => {
+                    this.logger.error(
+                        `No se pudo enviar el mail de reseteo a ${user.email}`,
+                        error instanceof Error ? error.stack : String(error),
+                    );
+                });
+        }
+
+        return { message: FORGOT_PASSWORD_MESSAGE };
+    }
+
+    /**
+     * Cierra el flujo: valida el token y cambia la contraseña.
+     *
+     * El token es de un solo uso sin necesidad de tabla: lleva una huella del
+     * hash de contraseña vigente al emitirlo, así que apenas la contraseña
+     * cambia, deja de validar (ver ResetTokenService).
+     */
+    async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+        const { userId, fp } = this.resetTokenService.verify(dto.token);
+
+        const currentHash = await this.usersService.getPasswordHash(userId);
+        const user = await this.usersService.findById(userId);
+
+        // Mismo mensaje para "el usuario ya no existe" y "el token ya se usó":
+        // no hay razón para distinguirlos de cara al cliente.
+        if (!user || !this.resetTokenService.matchesCurrentPassword(fp, currentHash)) {
+            throw new BadRequestException(
+                'Este link ya fue usado o ya no es válido. Pedí uno nuevo.',
+            );
+        }
+
+        await this.usersService.resetPassword(userId, dto.newPassword);
+
+        return { message: 'Tu contraseña se actualizó correctamente.' };
+    }
+
+    /**
+     * FRONTEND_URL puede ser una LISTA separada por comas (se usa también para
+     * CORS): para armar el link hace falta una sola, se toma la primera. Mismo
+     * criterio que el callback de Google en AuthController.
+     */
+    private frontendBaseUrl(): string {
+        const raw =
+            this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+        return raw.split(',')[0].trim().replace(/\/$/, '');
     }
 }

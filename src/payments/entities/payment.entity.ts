@@ -34,7 +34,13 @@ export enum PaymentStatus {
  * reintenta el webhook si no le devolvés 200 rápido, así que el handler tiene
  * que poder correr N veces sobre el mismo id sin duplicar nada.
  */
+/* Acelera GET /teacher/payments: filtra por curso (JOIN contra
+   course.instructorId) y por tipo, y sin esto sería un scan completo de la
+   tabla en cuanto crezca. La columna (`courseId`) ya existía desde el
+   InitialSchema con su FK — sólo faltaba el índice: Postgres no lo crea solo
+   para una FK. */
 @Entity('payments')
+@Index(['course'])
 export class Payment {
     @PrimaryGeneratedColumn('uuid')
     id: string;

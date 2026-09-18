@@ -54,6 +54,22 @@ export const envValidationSchema = Joi.object({
   // Segundos de validez del access token (se pasa a signOptions.expiresIn).
   JWT_EXPIRES_IN: Joi.number().integer().positive().default(3600),
 
+  // Secret de los tokens de "recuperar contraseña". TIENE que ser distinto de
+  // JWT_SECRET: así un token de reseteo filtrado no sirve como sesión ni al
+  // revés. Mismas exigencias que JWT_SECRET (32+ chars en producción).
+  JWT_RESET_SECRET: Joi.string()
+    .required()
+    .when(isProd, {
+      is: 'production',
+      then: Joi.string().min(32).invalid(Joi.ref('JWT_SECRET')),
+    })
+    .messages({
+      'string.min':
+        'JWT_RESET_SECRET debe tener al menos 32 caracteres en producción. Generá uno con: openssl rand -hex 32',
+      'any.invalid':
+        'JWT_RESET_SECRET no puede ser igual a JWT_SECRET: son secrets de propósitos distintos.',
+    }),
+
   // --- Frontend / CORS ---
   // Lista separada por comas. En prod es obligatoria y no puede ser '*'.
   FRONTEND_URL: requiredInProd(Joi.string()).default('http://localhost:3000'),
@@ -110,6 +126,16 @@ export const envValidationSchema = Joi.object({
   CLOUDINARY_CLOUD_NAME: requiredInProd(Joi.string()),
   CLOUDINARY_API_KEY: requiredInProd(Joi.string()),
   CLOUDINARY_API_SECRET: requiredInProd(Joi.string()),
+
+  // --- Mails transaccionales: Brevo ---
+  // En dev son opcionales: MailService NO llama a Brevo fuera de producción,
+  // escribe el mail en el log (así no se queman los 300 mails/día del plan
+  // gratuito probando en local).
+  // MAIL_FROM_ADDRESS tiene que ser EXACTAMENTE un remitente verificado en el
+  // dashboard de Brevo, o la API rechaza el envío con un 403.
+  BREVO_API_KEY: requiredInProd(Joi.string()),
+  MAIL_FROM_ADDRESS: requiredInProd(Joi.string().email()),
+  MAIL_FROM_NAME: Joi.string().default('Campus'),
 })
   // Permite variables extra en el entorno (PATH, HOME, las que inyecta el
   // hosting, etc.) sin hacer fallar el arranque.

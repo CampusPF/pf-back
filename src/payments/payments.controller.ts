@@ -1,5 +1,6 @@
 import {
     Controller,
+    Get,
     Post,
     Body,
     Req,
@@ -16,7 +17,7 @@ import type { Request, Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import Stripe from 'stripe';
-import { PaymentsService } from './payments.service';
+import { PaymentsService, MyPaymentRow } from './payments.service';
 import { StripeService } from './stripe.service';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -60,6 +61,19 @@ export class PaymentsController {
             );
         }
         return this.paymentsService.createIntent(user.id, dto);
+    }
+
+    /**
+     * Mi historial de pagos: compras de curso y suscripciones, en un solo
+     * listado. Incluye TODOS los estados (pending/succeeded/failed) — a
+     * diferencia del reporte del docente, acá al alumno le sirve ver si algo
+     * quedó pendiente o falló, no sólo lo que se cobró.
+     */
+    @Get('me')
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Mi historial de pagos (cursos y suscripciones)' })
+    getMyPayments(@CurrentUser('id') userId: string): Promise<MyPaymentRow[]> {
+        return this.paymentsService.getMyPayments(userId);
     }
 
     /**
