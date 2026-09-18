@@ -17,6 +17,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -72,6 +73,12 @@ export class CoursesController {
   @ApiOperation({
     summary: 'Obtener todos los cursos',
     description: 'Cada curso incluye ratingAverage (null sin reseñas), reviewsCount y studentsCount.',
+  })
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    type: Boolean,
+    description: 'Si es "true", incluye también los cursos inactivos',
   })
   async findAll(@Query('includeInactive') includeInactive?: string) {
     const courses = await this.coursesService.findAll(includeInactive === 'true');

@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { CourseEnrollmentsService } from './course-enrollments.service';
 import { CreateCourseEnrollmentDto } from './dto/create-course-enrollment.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -61,6 +61,12 @@ export class CourseEnrollmentsController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: '[Admin] Listar todas las inscripciones de la plataforma' })
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    type: Boolean,
+    description: 'Si es "true", incluye también los registros inactivos',
+  })
   findAll(@Query('includeInactive') includeInactive?: string) {
     // Devuelve inscripciones de todos los alumnos (con sus datos personales):
     // operación de administración explícita, restringida a ADMIN.
@@ -70,6 +76,12 @@ export class CourseEnrollmentsController {
 
   @Get('me')
   @ApiOperation({ summary: 'Listar mis inscripciones' })
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    type: Boolean,
+    description: 'Si es "true", incluye también los registros inactivos',
+  })
   findMine(
     @CurrentUser('id') studentId: string,
     @Query('includeInactive') includeInactive?: string,
