@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -32,18 +33,27 @@ async function bootstrap() {
 
   // --- Cabeceras de seguridad ---
   // La CSP por defecto de helmet rompe la UI de Swagger (usa scripts/estilos
-  // inline). Como Swagger solo se habilita fuera de producción, ahí la
-  // desactivamos; en producción va la CSP completa.
+  // inline). Por eso la desactivamos SOLO en las rutas de Swagger (/api,
+  // /api/*, /api-json); el resto de la API mantiene la CSP completa.
   const swaggerEnabled =
     !isProduction || config.get<boolean>('SWAGGER_ENABLED') === true;
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: swaggerEnabled ? false : undefined,
-      // La API se consume desde otro origen (el front): esta cabecera
-      // bloquearía la lectura cross-origin de las respuestas.
-      crossOriginResourcePolicy: { policy: 'cross-origin' },
-    }),
+  // La API se consume desde otro origen (el front): crossOriginResourcePolicy
+  // en 'same-origin' bloquearía la lectura cross-origin de las respuestas.
+  const defaultHelmet = helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  });
+  const swaggerHelmet = helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  });
+  const isSwaggerPath = (path: string) =>
+    path === '/api' || path.startsWith('/api/') || path === '/api-json';
+
+  app.use((req: Request, res: Response, next: NextFunction) =>
+    swaggerEnabled && isSwaggerPath(req.path)
+      ? swaggerHelmet(req, res, next)
+      : defaultHelmet(req, res, next),
   );
 
   // --- CORS ---
@@ -95,8 +105,8 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter(isProduction));
 
   // --- Swagger ---
-  // En producción queda apagado: expone el contrato completo de la API.
-  // Se puede forzar con SWAGGER_ENABLED=true si alguna vez hace falta.
+  // En producción depende de SWAGGER_ENABLED (hoy en true en Render: la doc es
+  // pública en /api). Ponerla en false lo apaga sin tocar código.
   if (swaggerEnabled) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Campus Lite API')
@@ -106,10 +116,15 @@ async function bootstrap() {
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('api', app, document); // disponible en /api
+    // disponible en /api (UI) y /api-json (spec OpenAPI)
+    SwaggerModule.setup('api', app, document, {
+      customSiteTitle: 'Campus Lite API',
+      // Mantiene el token de "Authorize" al recargar la página.
+      swaggerOptions: { persistAuthorization: true },
+    });
     logger.log('Swagger habilitado en /api');
   } else {
-    logger.log('Swagger deshabilitado (NODE_ENV=production)');
+    logger.log('Swagger deshabilitado (SWAGGER_ENABLED=false)');
   }
 
   const port = config.get<number>('PORT') ?? 4000;

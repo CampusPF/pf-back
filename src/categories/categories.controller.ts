@@ -5,6 +5,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -40,6 +41,12 @@ export class CategoriesController {
 
   @Get()
   @Public()
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    type: Boolean,
+    description: 'Si es "true", incluye también los registros inactivos',
+  })
   findAll(@Query('includeInactive') includeInactive?: string) {
     return this.categoriesService.findAll(includeInactive === 'true');
   }

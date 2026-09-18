@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { LessonsService } from './lessons.service';
 import { LessonsAccessService } from './lessons-access.service';
 import { Lesson } from './entities/lesson.entity';
@@ -57,6 +57,12 @@ export class LessonsController {
 
   @Get()
   @ApiOperation({ summary: 'Listar todas las lecciones (opcionalmente filtradas por módulo)' })
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    type: Boolean,
+    description: 'Si es "true", incluye también los registros inactivos',
+  })
   findAll(
     @Query('moduleId') moduleId?: string,
     @Query('includeInactive') includeInactive?: string,
