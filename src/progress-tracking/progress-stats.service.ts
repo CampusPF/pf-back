@@ -2,12 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { LessonProgress } from '../lesson-progress/entities/lesson-progress.entity';
+import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
+
+/** Lo que el dashboard necesita saber de las inscripciones de un alumno. */
+export interface CourseCounts {
+  activos: number;
+  completados: number;
+}
 
 @Injectable()
 export class ProgressStatsService {
   constructor(
     @InjectRepository(LessonProgress)
     private readonly lessonProgressRepository: Repository<LessonProgress>,
+    @InjectRepository(CourseEnrollment)
+    private readonly enrollmentsRepository: Repository<CourseEnrollment>,
   ) { }
 
   /**
@@ -40,5 +49,54 @@ export class ProgressStatsService {
     // SUM() de Postgres vuelve como string (bigint): sin el Number() esto
     // terminaría concatenando en vez de sumando más arriba.
     return Number(result?.total ?? 0);
+  }
+
+  /**
+   * Cuántas lecciones completó el alumno en total, en todos sus cursos.
+   *
+   * Un COUNT, sin traer las filas: lo usa la evaluación de logros, que corre
+   * en cada lección completada.
+   */
+  async countCompletedLessons(userId: string): Promise<number> {
+    return this.lessonProgressRepository
+      .createQueryBuilder('progress')
+      .innerJoin('progress.enrollment', 'enrollment')
+      .innerJoin('enrollment.student', 'student')
+      .where('student.id = :userId', { userId })
+      .andWhere('progress.completed = true')
+      .getCount();
+  }
+
+  /**
+   * Cursos activos y completados del alumno, en una sola consulta.
+   *
+   * "Completado" es `progressPercent >= 100`, la misma columna derivada que
+   * recalcula LessonProgressService cada vez que se marca o desmarca una
+   * lección — no un conteo aparte que pueda decir otra cosa. "Activo" es todo
+   * lo demás que siga vivo: inscripto y todavía sin terminar.
+   *
+   * Las inscripciones dadas de baja (`isActive = false`) no cuentan en ningún
+   * lado.
+   */
+  async countCoursesByStatus(userId: string): Promise<CourseCounts> {
+    const row = await this.enrollmentsRepository
+      .createQueryBuilder('enrollment')
+      .innerJoin('enrollment.student', 'student')
+      .where('student.id = :userId', { userId })
+      .andWhere('enrollment.isActive = true')
+      .select(
+        'COUNT(*) FILTER (WHERE enrollment.progressPercent >= 100)',
+        'completados',
+      )
+      .addSelect(
+        'COUNT(*) FILTER (WHERE enrollment.progressPercent < 100)',
+        'activos',
+      )
+      .getRawOne<{ completados: string; activos: string }>();
+
+    return {
+      activos: Number(row?.activos ?? 0),
+      completados: Number(row?.completados ?? 0),
+    };
   }
 }
