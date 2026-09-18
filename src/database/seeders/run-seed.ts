@@ -9,8 +9,10 @@ import { Lesson } from '../../lessons/entities/lesson.entity';
 import { LessonResource } from '../../lessons/entities/lesson-resource.entity';
 import { LessonProgress } from '../../lesson-progress/entities/lesson-progress.entity';
 import { Subscription } from '../../subscriptions/entities/subscription.entity';
+import { Achievement } from '../../achievements/entities/achievement.entity';
 import { seedCourses } from './course.seed';
 import { seedLessons } from './lesson.seed';
+import { seedAchievements } from './achievement.seed';
 
 config(); // carga variables desde .env
 
@@ -45,6 +47,7 @@ const dataSource = new DataSource({
         LessonResource,
         LessonProgress,
         Subscription,
+        Achievement,
     ],
     synchronize: false, // el seeder no debe crear/alterar el esquema
 });
@@ -55,6 +58,7 @@ async function run() {
 
     await seedCourses(dataSource);
     await seedLessons(dataSource);
+    await seedAchievements(dataSource);
 
     await dataSource.destroy();
     console.log('🔌 Conexión cerrada');
