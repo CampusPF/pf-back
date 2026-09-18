@@ -16,6 +16,8 @@ import { ConfigService } from "@nestjs/config";
 import { AuthService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { GoogleAuthGuard } from "./guards/google-auth.guard";
 import { Public } from "./decorators/public.decorator";
@@ -67,6 +69,34 @@ export class AuthController {
     const result = await this.authService.login(dto);
     this.setAuthCookie(res, result.access_token);
     return result;
+  }
+
+  /**
+   * Pide el mail con el link para elegir una nueva contraseña.
+   *
+   * Responde SIEMPRE lo mismo, exista o no la cuenta (ver
+   * AuthService.forgotPassword). Con el mismo rate limit que login/register:
+   * sin él, alguien podría usarlo para llenarle la casilla a un tercero.
+   */
+  @Public()
+  @Post("forgot-password")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  /** Cierra el flujo: token del mail + contraseña nueva. */
+  @Public()
+  @Post("reset-password")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: { limit: AUTH_THROTTLE_LIMIT, ttl: AUTH_THROTTLE_TTL_MS },
+  })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @Post("logout")

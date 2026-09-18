@@ -142,6 +142,35 @@ export class CloudinaryService {
     }
 
     /**
+     * Sube un PDF generado por el back (no subido por un usuario): hoy, los
+     * certificados.
+     *
+     * Se separa de `uploadPrivateFile` en dos cosas. Primero, recibe un Buffer
+     * y no un Express.Multer.File, porque el archivo no viene de un formulario
+     * sino de pdfkit. Segundo, es PÚBLICO (`type: 'upload'`): la URL se guarda
+     * en la base y tiene que poder abrirse desde el mail, el QR o el link del
+     * dashboard, sin firmar nada y sin que caduque.
+     *
+     * `publicId` es el código del certificado, así que volver a subir el mismo
+     * código sobrescribe el archivo en vez de dejar basura suelta.
+     */
+    async uploadPublicPdf(
+        buffer: Buffer,
+        folder: string,
+        publicId: string,
+    ): Promise<UploadedImage> {
+        const result = await this.uploadBuffer(buffer, {
+            folder: this.folderPath(folder),
+            // 'raw' porque un PDF no es una imagen que Cloudinary deba transformar.
+            resource_type: 'raw',
+            public_id: publicId,
+            overwrite: true,
+        });
+
+        return { publicId: result.public_id, url: result.secure_url };
+    }
+
+    /**
      * URL firmada y con vencimiento para un archivo `authenticated`.
      *
      * Se genera en el momento de pedirla y se entrega sólo a quien pasó el
@@ -192,6 +221,14 @@ export class CloudinaryService {
         file: Express.Multer.File,
         options: UploadApiOptions,
     ): Promise<UploadApiResponse> {
+        return this.uploadBuffer(file.buffer, options);
+    }
+
+    /** El envío en sí. Todo lo que sube pasa por acá, venga de Multer o no. */
+    private uploadBuffer(
+        buffer: Buffer,
+        options: UploadApiOptions,
+    ): Promise<UploadApiResponse> {
         this.assertConfigured();
 
         return new Promise((resolve, reject) => {
@@ -206,7 +243,7 @@ export class CloudinaryService {
                 resolve(result);
             });
 
-            toStream(file.buffer).pipe(stream);
+            toStream(buffer).pipe(stream);
         });
     }
 
@@ -256,4 +293,5 @@ export const UPLOAD_FOLDERS = {
     CATEGORIES: 'categories',
     AVATARS: 'avatars',
     LESSON_RESOURCES: 'lesson-resources',
+    CERTIFICATES: 'certificates',
 } as const;

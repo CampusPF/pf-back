@@ -6,6 +6,7 @@ import {
     JoinColumn,
     CreateDateColumn,
     Index,
+    Unique,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
@@ -16,6 +17,12 @@ import { User } from '../../users/entities/user.entity';
 @Entity('xp_log')
 // Acelera la suma de XP por usuario.
 @Index('IDX_xp_log_user', ['userId'])
+/* Un hecho suma XP UNA sola vez. `reason` es "<acción>:<id>"
+   ("lesson_completed:<lessonId>"), así que este único es lo que hace
+   idempotente a XpService.addXp: LESSON_COMPLETED se vuelve a emitir si el
+   alumno desmarca y re-marca una lección, y sin esto cada pasada duplicaría
+   el XP. */
+@Unique('UQ_xp_log_user_reason', ['userId', 'reason'])
 export class XpLog {
     @PrimaryGeneratedColumn('uuid')
     id: string;

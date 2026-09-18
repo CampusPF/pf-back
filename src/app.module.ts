@@ -112,10 +112,11 @@ import { CategoriesService } from './categories/categories.service';
     FileUploadModule,
     // Por ahora solo registran entidades (sin services ni endpoints).
     NotificationsModule,
-    CertificatesModule,
     QuizzesModule,
-    AchievementsModule,
+    // Gamificación: XP/niveles y logros, ambos movidos por el bus de eventos.
     GamificationModule,
+    AchievementsModule,
+    CertificatesModule,
   ],
   controllers: [AppController],
   providers: [
