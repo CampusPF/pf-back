@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentsController } from './payments.controller';
+import { TeacherPaymentsController } from './teacher-payments.controller';
 import { PaymentsService } from './payments.service';
 import { StripeService } from './stripe.service';
 import { Payment } from './entities/payment.entity';
@@ -14,7 +15,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
         CourseEnrollmentsModule,
         SubscriptionsModule,
     ],
-    controllers: [PaymentsController],
+    controllers: [PaymentsController, TeacherPaymentsController],
     providers: [PaymentsService, StripeService],
 })
 export class PaymentsModule { }

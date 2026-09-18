@@ -14,12 +14,34 @@ export interface PaymentSyncResult {
     /** Estado del PaymentIntent según Stripe (ej. `succeeded`, `processing`). */
     stripeStatus: Stripe.PaymentIntent.Status | null;
 }
+
+/** Fila de GET /payments/me. */
+export interface MyPaymentRow {
+    id: string;
+    /** Título del curso, "Suscripción Premium", o "Curso eliminado" si ya no existe. */
+    concept: string;
+    /** En centavos, igual que `amountInCents` — el front formatea. */
+    amount: number;
+    currency: string;
+    status: PaymentStatus;
+    date: Date;
+}
+
+/** Fila de GET /teacher/payments. */
+export interface TeacherPaymentRow {
+    id: string;
+    courseName: string;
+    buyerName: string;
+    amount: number;
+    currency: string;
+    date: Date;
+}
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import Stripe from 'stripe';
 import { Payment, PaymentStatus, PaymentType } from './entities/payment.entity';
 import { Course } from '../courses/entities/course.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { StripeService } from './stripe.service';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
@@ -308,5 +330,83 @@ export class PaymentsService {
             payment.plan,
             payment.amountInCents,
         );
+    }
+
+    /**
+     * Historial de pagos del alumno: compras de curso y suscripciones juntas,
+     * de la más nueva a la más vieja.
+     *
+     * El concepto se arma a partir de `type`, no de si `course` vino o no: un
+     * pago de tipo COURSE cuyo curso se borró físicamente (rarísimo — el
+     * borrado normal de un curso es lógico, ver CoursesService.remove) tiene
+     * que decir "Curso eliminado", nunca confundirse con una suscripción.
+     */
+    async getMyPayments(userId: string): Promise<MyPaymentRow[]> {
+        const payments = await this.paymentsRepository.find({
+            where: { user: { id: userId } },
+            relations: { course: true },
+            order: { createdAt: 'DESC' },
+        });
+
+        return payments.map((payment) => ({
+            id: payment.id,
+            concept:
+                payment.type === PaymentType.COURSE
+                    ? (payment.course?.title ?? 'Curso eliminado')
+                    : 'Suscripción Premium',
+            amount: payment.amountInCents,
+            currency: payment.currency,
+            status: payment.status,
+            date: payment.createdAt,
+        }));
+    }
+
+    /**
+     * Reporte de ventas para el docente (o el admin, sin filtrar por dueño).
+     *
+     * Sólo pagos SUCCEEDED: a diferencia de `getMyPayments`, esto es "plata
+     * que entró", no un historial de intentos — un PaymentIntent pendiente o
+     * fallido no es una venta.
+     *
+     * Las suscripciones (`course` null) quedan afuera a propósito: esa plata
+     * es de la plataforma, ningún docente puntual la factura como propia.
+     *
+     * INNER JOIN contra `course`: en el flujo normal un pago COURSE siempre
+     * tiene curso (el borrado de un curso es lógico, isActive:false — ver
+     * CoursesService.remove), así que no hace falta LEFT JOIN. El único caso
+     * en que desaparecería una venta de acá es un DELETE físico manual sobre
+     * `courses`, que la app nunca hace.
+     */
+    async getTeacherPayments(
+        actor: { id: string; role: UserRole },
+    ): Promise<TeacherPaymentRow[]> {
+        const query = this.paymentsRepository
+            .createQueryBuilder('payment')
+            .innerJoinAndSelect('payment.course', 'course')
+            .innerJoinAndSelect('payment.user', 'buyer')
+            .where('payment.type = :type', { type: PaymentType.COURSE })
+            .andWhere('payment.status = :status', { status: PaymentStatus.SUCCEEDED })
+            .orderBy('payment.createdAt', 'DESC');
+
+        // El admin ve TODAS las ventas de curso, sin filtrar por instructor —
+        // ni siquiera si el admin tiene cursos propios: acá es un reporte
+        // global, no "mis ventas".
+        if (actor.role !== UserRole.ADMIN) {
+            query.andWhere('course.instructorId = :instructorId', {
+                instructorId: actor.id,
+            });
+        }
+
+        const payments = await query.getMany();
+
+        return payments.map((payment) => ({
+            id: payment.id,
+            // No-null: lo garantiza el INNER JOIN de arriba.
+            courseName: payment.course!.title,
+            buyerName: payment.user?.name ?? 'Alumno',
+            amount: payment.amountInCents,
+            currency: payment.currency,
+            date: payment.createdAt,
+        }));
     }
 }
