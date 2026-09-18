@@ -131,6 +131,38 @@ export class UsersService {
     });
   }
 
+  /**
+   * Hash de contraseña vigente de un usuario, o null si la cuenta se creó con
+   * Google y todavía no tiene una.
+   *
+   * Lo usa el flujo de "recuperar contraseña" para calcular la huella con la
+   * que se invalida el token una vez usado (ver ResetTokenService). Va acá y
+   * no con una query suelta en auth porque `passwordHash` es `select: false`:
+   * cuantos menos lugares lo pidan explícitamente, mejor.
+   */
+  async getPasswordHash(id: string): Promise<string | null> {
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      select: { id: true, passwordHash: true },
+    });
+
+    return user?.passwordHash ?? null;
+  }
+
+  /**
+   * Pisa la contraseña sin pedir la anterior. Es el final del flujo de
+   * "olvidé mi contraseña".
+   *
+   * Separado de `setPassword()` a propósito: aquel exige `currentPassword`
+   * cuando la cuenta ya tiene una, que es justo lo que el usuario no puede
+   * dar acá. Lo que autoriza el cambio en este camino es el token del mail,
+   * que ya validó AuthService antes de llamar a esto.
+   */
+  async resetPassword(id: string, newPassword: string): Promise<void> {
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
+    await this.usersRepository.update({ id }, { passwordHash });
+  }
+
   async update(id: string, dto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
 
