@@ -168,6 +168,41 @@ describe('CloudinaryService configurado', () => {
         });
     });
 
+    /**
+     * Sin el ".pdf" en el public_id, Cloudinary sirve el archivo como
+     * octet-stream + attachment: el <iframe> del front no lo muestra y la
+     * descarga baja sin extensión.
+     */
+    it('uploadPublicPdf sube como raw y con ".pdf" en el public_id', async () => {
+        mockUploadResult({
+            public_id: 'campus-lite/test/certificates/CMP-ABC123.pdf',
+            secure_url:
+                'https://res.cloudinary.com/demo/raw/upload/v1/campus-lite/test/certificates/CMP-ABC123.pdf',
+        });
+
+        const result = await service.uploadPublicPdf(
+            Buffer.from('%PDF-1.3'),
+            'certificates',
+            'CMP-ABC123',
+        );
+
+        const [options] = uploadStream.mock.calls[0];
+        expect(options.resource_type).toBe('raw');
+        expect(options.public_id).toBe('CMP-ABC123.pdf');
+        expect(options.folder).toBe('campus-lite/test/certificates');
+        // Público: sin type:'authenticated', la URL se abre sin firmar.
+        expect(options.type).toBeUndefined();
+        expect(result.url.endsWith('.pdf')).toBe(true);
+    });
+
+    it('uploadPublicPdf no duplica la extensión si el id ya la trae', async () => {
+        mockUploadResult({ public_id: 'x.pdf', secure_url: 'https://res/x.pdf' });
+
+        await service.uploadPublicPdf(Buffer.from('%PDF-1.3'), 'certificates', 'CMP-ABC123.pdf');
+
+        expect(uploadStream.mock.calls[0][0].public_id).toBe('CMP-ABC123.pdf');
+    });
+
     it('getSignedUrl firma con vencimiento futuro sobre raw/authenticated', () => {
         const before = Math.floor(Date.now() / 1000);
         service.getSignedUrl('pid', 600);

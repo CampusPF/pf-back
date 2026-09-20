@@ -37,11 +37,24 @@ class FakePaymentsRepository {
     }
 
     async findOne({ where }: any): Promise<Payment | null> {
-        return (
-            this.rows.find(
-                (r) => r.stripePaymentIntentId === where.stripePaymentIntentId,
-            ) ?? null
+        if (where.stripePaymentIntentId) {
+            return (
+                this.rows.find(
+                    (r) => r.stripePaymentIntentId === where.stripePaymentIntentId,
+                ) ?? null
+            );
+        }
+
+        // Búsqueda del pendiente reutilizable (order createdAt DESC → el último).
+        const matches = this.rows.filter(
+            (r) =>
+                (r.user as any)?.id === where.user?.id &&
+                r.type === where.type &&
+                r.status === where.status &&
+                (where.course ? (r.course as any)?.id === where.course.id : true) &&
+                (where.plan ? r.plan === where.plan : true),
         );
+        return matches[matches.length - 1] ?? null;
     }
 }
 
@@ -50,20 +63,32 @@ const PAID_COURSE = { id: 'course-paid', priceInCents: 4999, currency: 'usd' };
 
 function makeService() {
     let intentCounter = 0;
+    // Los intents creados, para que retrieve() los devuelva como haría Stripe.
+    const intents = new Map<string, any>();
     const paymentIntentsCreate = jest.fn(async (params: any) => {
         intentCounter += 1;
-        return {
+        const intent = {
             id: `pi_${intentCounter}`,
             client_secret: `pi_${intentCounter}_secret_test`,
             amount: params.amount,
             amount_received: params.amount,
             currency: params.currency,
             metadata: params.metadata,
+            status: 'requires_payment_method',
         };
+        intents.set(intent.id, intent);
+        return intent;
+    });
+    const paymentIntentsRetrieve = jest.fn(async (id: string) => {
+        const intent = intents.get(id);
+        if (!intent) throw new Error(`No such payment_intent: ${id}`);
+        return intent;
     });
 
     const stripeService = {
-        stripe: { paymentIntents: { create: paymentIntentsCreate } },
+        stripe: {
+            paymentIntents: { create: paymentIntentsCreate, retrieve: paymentIntentsRetrieve },
+        },
     } as unknown as StripeService;
 
     const paymentsRepo = new FakePaymentsRepository();
@@ -98,6 +123,8 @@ function makeService() {
         service,
         paymentsRepo,
         paymentIntentsCreate,
+        paymentIntentsRetrieve,
+        intents,
         enrollmentsService,
         subscriptionsService,
     };
@@ -174,6 +201,117 @@ describe('PaymentsService.createIntent', () => {
         expect(payment.type).toBe(PaymentType.COURSE);
         expect(payment.amountInCents).toBe(PAID_COURSE.priceInCents);
         expect(payment.stripePaymentIntentId).toBeDefined();
+    });
+
+    describe('reutiliza el pago pendiente', () => {
+        it('segunda visita al mismo curso → mismo clientSecret, sin PaymentIntent ni fila nuevos', async () => {
+            const { service, paymentsRepo, paymentIntentsCreate } = makeService();
+
+            const first = await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+            const second = await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+
+            expect(second.clientSecret).toBe(first.clientSecret);
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(1);
+            expect(paymentsRepo.rows).toHaveLength(1);
+        });
+
+        it('otro usuario, mismo curso → NO reutiliza el pendiente ajeno', async () => {
+            const { service, paymentsRepo, paymentIntentsCreate } = makeService();
+
+            const a = await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+            const b = await service.createIntent('user-2', { courseId: PAID_COURSE.id });
+
+            expect(b.clientSecret).not.toBe(a.clientSecret);
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(2);
+            expect(paymentsRepo.rows).toHaveLength(2);
+        });
+
+        it('el precio del curso cambió → el intent viejo ya no vale, crea uno nuevo', async () => {
+            const { service, paymentIntentsCreate } = makeService();
+            await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+
+            const originalPrice = PAID_COURSE.priceInCents;
+            PAID_COURSE.priceInCents = 5999;
+            try {
+                await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+            } finally {
+                PAID_COURSE.priceInCents = originalPrice;
+            }
+
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(2);
+            expect(paymentIntentsCreate.mock.calls[1][0].amount).toBe(5999);
+        });
+
+        it.each(['canceled', 'succeeded', 'processing'])(
+            'el PaymentIntent quedó en "%s" (ya no se puede pagar) → crea uno nuevo',
+            async (status) => {
+                const { service, intents, paymentIntentsCreate } = makeService();
+                await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+                intents.get('pi_1').status = status;
+
+                await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+
+                expect(paymentIntentsCreate).toHaveBeenCalledTimes(2);
+            },
+        );
+
+        it('un intent que espera acción del usuario (3DS) SÍ se reutiliza', async () => {
+            const { service, intents, paymentIntentsCreate } = makeService();
+            const first = await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+            intents.get('pi_1').status = 'requires_action';
+
+            const second = await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+
+            expect(second.clientSecret).toBe(first.clientSecret);
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(1);
+        });
+
+        it('Stripe falla al consultar el intent viejo → no bloquea la compra, crea uno nuevo', async () => {
+            const { service, paymentIntentsCreate, paymentIntentsRetrieve } = makeService();
+            await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+            paymentIntentsRetrieve.mockRejectedValueOnce(new Error('Stripe caído'));
+
+            const { clientSecret } = await service.createIntent('user-1', {
+                courseId: PAID_COURSE.id,
+            });
+
+            expect(clientSecret).toMatch(/_secret_/);
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(2);
+        });
+
+        it('suscripción: segunda visita al mismo plan → reutiliza', async () => {
+            const { service, paymentsRepo, paymentIntentsCreate } = makeService();
+
+            const first = await service.createIntent('user-1', {
+                planId: SubscriptionPlan.PREMIUM,
+            });
+            const second = await service.createIntent('user-1', {
+                planId: SubscriptionPlan.PREMIUM,
+            });
+
+            expect(second.clientSecret).toBe(first.clientSecret);
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(1);
+            expect(paymentsRepo.rows).toHaveLength(1);
+        });
+
+        it('un pendiente de curso NO se reutiliza para una suscripción (ni al revés)', async () => {
+            const { service, paymentIntentsCreate } = makeService();
+
+            await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+            await service.createIntent('user-1', { planId: SubscriptionPlan.PREMIUM });
+
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(2);
+        });
+
+        it('un pago ya exitoso (succeeded) no se reutiliza: sólo los pendientes', async () => {
+            const { service, paymentsRepo, paymentIntentsCreate } = makeService();
+            await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+            paymentsRepo.rows[0].status = PaymentStatus.SUCCEEDED;
+
+            await service.createIntent('user-1', { courseId: PAID_COURSE.id });
+
+            expect(paymentIntentsCreate).toHaveBeenCalledTimes(2);
+        });
     });
 });
 

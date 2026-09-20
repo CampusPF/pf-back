@@ -10,12 +10,13 @@ import { FileUploadModule } from '../file-upload/file-upload.module';
 import { CourseStatsService } from './course-stats.service';
 import { CourseReview } from '../course-reviews/entities/course-review.entity';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
+import { Lesson } from '../lessons/entities/lesson.entity';
 
 @Module({
   imports: [
-    // CourseReview y CourseEnrollment: sólo lectura, para los agregados del
-    // catálogo (CourseStatsService).
-    TypeOrmModule.forFeature([Course, Category, User, CourseReview, CourseEnrollment]),
+    // CourseReview, CourseEnrollment y Lesson: sólo lectura, para los agregados
+    // del catálogo (CourseStatsService).
+    TypeOrmModule.forFeature([Course, Category, User, CourseReview, CourseEnrollment, Lesson]),
     AuthModule,
     FileUploadModule,
   ],

@@ -25,6 +25,15 @@ export interface CertificateData {
  * completo en `end`. No hay nada que cerrar a mano — `doc.end()` termina el
  * stream y no queda ningún proceso colgado entre una emisión y otra.
  */
+/**
+ * Línea de horas y fecha. Un curso sin duración cargada (0 horas) no dice
+ * "0 horas de contenido": en un certificado queda mal y no informa nada.
+ */
+export function certificateSubtitle(hours: number, date: string): string {
+    if (hours <= 0) return `Emitido el ${date}`;
+    return `${hours} ${hours === 1 ? 'hora' : 'horas'} de contenido · Emitido el ${date}`;
+}
+
 export function generateCertificatePdf(data: CertificateData): Promise<Buffer> {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 50 });
@@ -80,7 +89,7 @@ export function generateCertificatePdf(data: CertificateData): Promise<Buffer> {
             .fontSize(12)
             .font('Helvetica')
             .fillColor('#333333')
-            .text(`${data.hours} ${data.hours === 1 ? 'hora' : 'horas'} de contenido · Emitido el ${data.date}`, {
+            .text(certificateSubtitle(data.hours, data.date), {
                 align: 'center',
             });
 
