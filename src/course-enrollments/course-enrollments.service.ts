@@ -7,12 +7,21 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Repository } from 'typeorm';
 import { CourseEnrollment } from './entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateCourseEnrollmentDto } from './dto/create-course-enrollment.dto';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { EVENTS, CourseEnrolledEvent } from '../events';
+
+/**
+ * Cada cuánto, como mucho, se actualiza `lastAccessedAt`. Abrir diez lecciones
+ * seguidas no necesita diez UPDATE: para el recordatorio semanal alcanza con
+ * saber el día.
+ */
+const ACCESS_TOUCH_INTERVAL = '1 hour';
 
 @Injectable()
 export class CourseEnrollmentsService {
@@ -24,6 +33,7 @@ export class CourseEnrollmentsService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly eventEmitter: EventEmitter2,
   ) { }
 
   /**
@@ -92,11 +102,50 @@ export class CourseEnrollmentsService {
       }
       // Reactivar la inscripción cancelada en vez de duplicar la fila
       existing.isActive = true;
-      return this.enrollmentsRepository.save(existing);
+      const reactivated = await this.enrollmentsRepository.save(existing);
+      this.publishEnrolled(studentId, course.id, reactivated.id);
+      return reactivated;
     }
 
     const enrollment = this.enrollmentsRepository.create({ student, course });
-    return this.enrollmentsRepository.save(enrollment);
+    const saved = await this.enrollmentsRepository.save(enrollment);
+    this.publishEnrolled(studentId, course.id, saved.id);
+    return saved;
+  }
+
+  /**
+   * Avisa "quedó inscripto" (mail al alumno con el temario y mail al docente
+   * del curso, ver EmailNotificationsListener). Se emite DESPUÉS del save: el
+   * listener tiene que encontrar la inscripción en la base.
+   */
+  private publishEnrolled(studentId: string, courseId: string, enrollmentId: string): void {
+    this.eventEmitter.emit(
+      EVENTS.COURSE_ENROLLED,
+      new CourseEnrolledEvent(studentId, courseId, enrollmentId),
+    );
+  }
+
+  /**
+   * Registra que el alumno entró al curso (abrió una lección). Lo usa el
+   * recordatorio semanal de inactividad (RemindersService).
+   *
+   * Un único UPDATE, sin leer antes, y que no escribe si el último acceso es
+   * de hace menos de ACCESS_TOUCH_INTERVAL. Si no hay inscripción activa
+   * (admin, docente del curso, suscriptor que todavía no se inscribió), no
+   * actualiza nada y está bien.
+   */
+  async touchAccess(studentId: string, courseId: string): Promise<void> {
+    await this.enrollmentsRepository
+      .createQueryBuilder()
+      .update(CourseEnrollment)
+      .set({ lastAccessedAt: () => 'now()' })
+      .where('"studentId" = :studentId', { studentId })
+      .andWhere('"courseId" = :courseId', { courseId })
+      .andWhere('"isActive" = true')
+      .andWhere(
+        `("last_accessed_at" IS NULL OR "last_accessed_at" < now() - interval '${ACCESS_TOUCH_INTERVAL}')`,
+      )
+      .execute();
   }
 
   /** ¿El alumno tiene una inscripción ACTIVA a este curso? */

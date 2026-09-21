@@ -20,6 +20,7 @@ import { MiddlewareConsumer, Module, NestModule, OnApplicationBootstrap } from '
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { envValidationSchema } from './config/env.validation';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -94,6 +95,8 @@ import { CategoriesService } from './categories/categories.service';
        Lo usa lesson-progress para avisar "se completó una lección" sin saber
        quién escucha (racha, horas, y más adelante XP/logros/mails). */
     EventEmitterModule.forRoot(),
+    // Crons (recordatorios semanales por mail, ver RemindersService).
+    ScheduleModule.forRoot(),
     HealthModule,
     UsersModule,
     CategoriesModule,
@@ -110,7 +113,7 @@ import { CategoriesService } from './categories/categories.service';
     PaymentsModule,
     AiTutorModule,
     FileUploadModule,
-    // Por ahora solo registran entidades (sin services ni endpoints).
+    // Mails de notificación (eventos + recordatorios semanales).
     NotificationsModule,
     QuizzesModule,
     // Gamificación: XP/niveles y logros, ambos movidos por el bus de eventos.

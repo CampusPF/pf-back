@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole, UserStatus } from './entities/user.entity';
@@ -17,6 +18,7 @@ import {
   CloudinaryService,
   UPLOAD_FOLDERS,
 } from '../file-upload/cloudinary.service';
+import { EVENTS, UserRegisteredEvent } from '../events';
 
 /** Lo que ve el usuario de sí mismo en GET /users/me. Nunca incluye el hash. */
 export interface UserProfile {
@@ -50,9 +52,18 @@ export class UsersService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly cloudinary: CloudinaryService,
+    private readonly eventEmitter: EventEmitter2,
   ) { }
 
-  async create(dto: CreateUserDto): Promise<User> {
+  /**
+   * `createdByAdmin`: true cuando la cuenta la da de alta un admin desde el
+   * panel (POST /users) en vez de la propia persona. Sólo cambia el mail de
+   * bienvenida, que en ese caso incluye un link para definir la contraseña.
+   */
+  async create(
+    dto: CreateUserDto,
+    { createdByAdmin = false }: { createdByAdmin?: boolean } = {},
+  ): Promise<User> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
 
     const user = this.usersRepository.create({
@@ -72,7 +83,16 @@ export class UsersService {
       country: dto.country,
     });
 
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+
+    // Mail de bienvenida (EmailNotificationsListener). emit() es síncrono,
+    // pero el listener corre async: un fallo del mail no rompe el alta.
+    this.eventEmitter.emit(
+      EVENTS.USER_REGISTERED,
+      new UserRegisteredEvent(saved.id, createdByAdmin),
+    );
+
+    return saved;
   }
 
   async findById(id: string) {

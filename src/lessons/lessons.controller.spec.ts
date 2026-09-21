@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { LessonsController } from './lessons.controller';
 import { LessonsService } from './lessons.service';
 import { LessonsAccessService } from './lessons-access.service';
+import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
@@ -36,13 +37,15 @@ const STUDENT = { id: 'user-1', role: UserRole.STUDENT };
 function makeController(canAccess: boolean) {
     const findOne = jest.fn();
     const canAccessCourseContent = jest.fn(async () => canAccess);
+    const touchAccess = jest.fn(async () => undefined);
 
     const controller = new LessonsController(
         { findOne } as unknown as LessonsService,
         { canAccessCourseContent } as unknown as LessonsAccessService,
+        { touchAccess } as unknown as CourseEnrollmentsService,
     );
 
-    return { controller, findOne, canAccessCourseContent };
+    return { controller, findOne, canAccessCourseContent, touchAccess };
 }
 
 describe('LessonsController.findOne (gate de contenido)', () => {
@@ -88,6 +91,27 @@ describe('LessonsController.findOne (gate de contenido)', () => {
             { id: 'course-1', priceInCents: 0 },
             expect.objectContaining({ id: 'lesson-1' }),
         );
+    });
+
+    it('alumno con acceso → registra el acceso al curso (recordatorio de inactividad)', async () => {
+        const { controller, findOne, touchAccess } = makeController(true);
+        findOne.mockResolvedValueOnce(lessonFixture(0));
+
+        await controller.findOne('lesson-1', STUDENT);
+
+        expect(touchAccess).toHaveBeenCalledWith('user-1', 'course-1');
+    });
+
+    it('sin acceso, o si no es alumno → no registra acceso', async () => {
+        const denied = makeController(false);
+        denied.findOne.mockResolvedValueOnce(lessonFixture(4999));
+        await denied.controller.findOne('lesson-1', STUDENT);
+        expect(denied.touchAccess).not.toHaveBeenCalled();
+
+        const admin = makeController(true);
+        admin.findOne.mockResolvedValueOnce(lessonFixture(0));
+        await admin.controller.findOne('lesson-1', { id: 'adm', role: UserRole.ADMIN });
+        expect(admin.touchAccess).not.toHaveBeenCalled();
     });
 
     it('propaga el 404 de la lección inexistente', async () => {

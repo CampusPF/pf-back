@@ -22,6 +22,13 @@ const requiredInProd = <T extends Joi.AnySchema>(schema: T): T =>
     otherwise: Joi.any().optional(),
   }) as T;
 
+/**
+ * ID de plantilla de Brevo. `.empty('')`: en el .env de dev las plantillas
+ * suelen quedar como `BREVO_TPL_X=` (vacías), y eso tiene que valer lo mismo
+ * que no definirla, no fallar con "must be a number".
+ */
+const brevoTemplateId = Joi.number().integer().positive().empty('');
+
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'test', 'production')
@@ -136,6 +143,37 @@ export const envValidationSchema = Joi.object({
   BREVO_API_KEY: requiredInProd(Joi.string()),
   MAIL_FROM_ADDRESS: requiredInProd(Joi.string().email()),
   MAIL_FROM_NAME: Joi.string().default('Campus'),
+  // Fuerza el envío real a Brevo también fuera de producción. Sirve para
+  // probar las plantillas contra una casilla propia; en false (default) los
+  // mails de dev se escriben en el log.
+  MAIL_FORCE_SEND: Joi.boolean().truthy('true').falsy('false').default(false),
+
+  // IDs de las plantillas transaccionales de Brevo (diseñadas en Stripo y
+  // exportadas a Brevo). Ver src/mail/mail-templates.ts.
+  BREVO_TPL_RESET_PASSWORD: requiredInProd(brevoTemplateId),
+  BREVO_TPL_WELCOME_STUDENT: requiredInProd(brevoTemplateId),
+  BREVO_TPL_WELCOME_TEACHER: requiredInProd(brevoTemplateId),
+  BREVO_TPL_WELCOME_ADMIN: requiredInProd(brevoTemplateId),
+  BREVO_TPL_COURSE_ENROLLED: requiredInProd(brevoTemplateId),
+  BREVO_TPL_COURSE_PURCHASED: requiredInProd(brevoTemplateId),
+  BREVO_TPL_COURSE_COMPLETED: requiredInProd(brevoTemplateId),
+  BREVO_TPL_CERTIFICATE: requiredInProd(brevoTemplateId),
+  BREVO_TPL_PREMIUM_CONFIRMED: requiredInProd(brevoTemplateId),
+  BREVO_TPL_STUDENT_REMINDER: requiredInProd(brevoTemplateId),
+  BREVO_TPL_TEACHER_NEW_STUDENT: requiredInProd(brevoTemplateId),
+  BREVO_TPL_TEACHER_REMINDER: requiredInProd(brevoTemplateId),
+
+  // --- Recordatorios semanales (cron) ---
+  REMINDER_CRON: Joi.string().default('0 10 * * 1'),
+  REMINDER_TZ: Joi.string().default('America/Argentina/Buenos_Aires'),
+  STUDENT_INACTIVITY_DAYS: Joi.number().integer().positive().default(7),
+  TEACHER_INACTIVITY_DAYS: Joi.number().integer().positive().default(30),
+  // URL pública del BACK (sin barra final). Arma el link de baja de los
+  // recordatorios, que apunta a GET /notifications/unsubscribe.
+  API_PUBLIC_URL: Joi.string().uri().default('http://localhost:4000'),
+  // Firma los links de "no quiero más recordatorios". Secret propio, igual
+  // que JWT_RESET_SECRET: un link de baja filtrado no sirve de sesión.
+  JWT_UNSUBSCRIBE_SECRET: requiredInProd(Joi.string().min(32)),
 })
   // Permite variables extra en el entorno (PATH, HOME, las que inyecta el
   // hosting, etc.) sin hacer fallar el arranque.

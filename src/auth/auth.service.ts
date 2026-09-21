@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
@@ -19,7 +20,13 @@ import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { normalizeEmail } from '../common/utils/normalize-email.util';
 import { ResetTokenService } from './reset-token.service';
 import { MailService } from '../mail/mail.service';
-import { resetPasswordEmail } from '../mail/templates/reset-password.template';
+import {
+    FRONT_ROUTES,
+    MailTemplate,
+    frontendUrl,
+    templateId,
+} from '../mail/mail-templates';
+import { EVENTS, UserRegisteredEvent } from '../events';
 
 /** Código de Postgres para "unique_violation". */
 const POSTGRES_UNIQUE_VIOLATION = '23505';
@@ -60,6 +67,7 @@ export class AuthService {
         private readonly resetTokenService: ResetTokenService,
         private readonly mailService: MailService,
         private readonly config: ConfigService,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
     async register(dto: RegisterDto) {
@@ -189,7 +197,14 @@ export class AuthService {
                 role: UserRole.STUDENT,
                 status: UserStatus.ACTIVE,
             });
-            return await this.usersRepository.save(created);
+            const saved = await this.usersRepository.save(created);
+            // Sólo acá, no en recoverFromRaceOrRethrow: si ganó el request
+            // gemelo, la bienvenida ya la disparó él.
+            this.eventEmitter.emit(
+                EVENTS.USER_REGISTERED,
+                new UserRegisteredEvent(saved.id),
+            );
+            return saved;
         } catch (error) {
             // Carrera: otro request creó la cuenta entre el findExisting y
             // este save. Devolvemos esa en vez de un 500.
@@ -260,13 +275,22 @@ export class AuthService {
                 user.id,
                 user.passwordHash ?? null,
             );
-            const resetUrl = `${this.frontendBaseUrl()}/reset-password?token=${token}`;
+            const resetUrl = frontendUrl(this.config, FRONT_ROUTES.resetPassword(token));
 
+            // Plantilla de Brevo (diseñada en Stripo). Es la misma para
+            // estudiante, docente y admin. No se registra en `notifications`:
+            // se puede pedir cuantas veces haga falta.
             void this.mailService
-                .send(
-                    user.email,
-                    'Recuperá tu contraseña — Campus',
-                    resetPasswordEmail(user.name, resetUrl),
+                .sendTemplate(
+                    { email: user.email, name: user.name },
+                    templateId(this.config, MailTemplate.RESET_PASSWORD),
+                    {
+                        name: user.name,
+                        resetUrl,
+                        // Coincide con el expiresIn de ResetTokenService.
+                        expiresInMinutes: 60,
+                    },
+                    ['reset-password'],
                 )
                 .catch((error: unknown) => {
                     this.logger.error(
@@ -303,16 +327,5 @@ export class AuthService {
         await this.usersService.resetPassword(userId, dto.newPassword);
 
         return { message: 'Tu contraseña se actualizó correctamente.' };
-    }
-
-    /**
-     * FRONTEND_URL puede ser una LISTA separada por comas (se usa también para
-     * CORS): para armar el link hace falta una sola, se toma la primera. Mismo
-     * criterio que el callback de Google en AuthController.
-     */
-    private frontendBaseUrl(): string {
-        const raw =
-            this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
-        return raw.split(',')[0].trim().replace(/\/$/, '');
     }
 }
