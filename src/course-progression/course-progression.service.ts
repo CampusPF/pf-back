@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Course } from '../courses/entities/course.entity';
@@ -10,6 +11,7 @@ import { Quiz } from '../quizzes/entities/quiz.entity';
 import { Question } from '../quizzes/entities/question.entity';
 import { QuizAttempt } from '../quizzes/entities/quiz-attempt.entity';
 import { UserRole } from '../users/entities/user.entity';
+import { EVENTS, CourseCompletedEvent } from '../events';
 
 /**
  * Cuántas veces se puede rendir un mismo checkpoint.
@@ -106,6 +108,7 @@ export class CourseProgressionService {
         private readonly attemptsRepository: Repository<QuizAttempt>,
         @InjectRepository(Course)
         private readonly coursesRepository: Repository<Course>,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
     /** El estado completo de la progresión, para dibujar los candados. */
@@ -303,6 +306,52 @@ export class CourseProgressionService {
         }
 
         await this.assertCanOpen(actor, courseId, quizId);
+    }
+
+    /**
+     * Decide si el curso quedó terminado y, si recién ahora lo está, lo marca
+     * y avisa con COURSE_COMPLETED.
+     *
+     * Un curso está terminado cuando están las lecciones AL 100% **y** todos
+     * los checkpoints aprobados. Antes el evento salía sólo con las lecciones,
+     * y el alumno recibía "¡Completaste el curso! Tu certificado te llega en
+     * unos minutos" con el checkpoint final todavía pendiente — un mail que
+     * prometía algo que el back después negaba con un 400.
+     *
+     * `enrollment.completedAt` es el guardia de idempotencia: el evento sale
+     * en la transición a terminado y nada más. Si el curso deja de estarlo
+     * (una lección desmarcada, o una lección nueva del docente), se limpia y
+     * puede volver a emitirse más adelante.
+     *
+     * Lo llaman los dos lados que pueden completar un curso: registrar
+     * progreso de una lección y aprobar un checkpoint.
+     */
+    async settleCourseCompletion(userId: string, courseId: string): Promise<void> {
+        const enrollment = await this.enrollmentsRepository.findOne({
+            where: { student: { id: userId }, course: { id: courseId }, isActive: true },
+            select: { id: true, progressPercent: true, completedAt: true },
+        });
+        if (!enrollment) return;
+
+        const quizzes = await this.activeQuizzes(courseId);
+        const passed = await this.passedQuizIds(userId, quizzes.map((quiz) => quiz.id));
+        const isComplete =
+            enrollment.progressPercent >= 100 && quizzes.every((quiz) => passed.has(quiz.id));
+
+        const wasComplete = enrollment.completedAt !== null;
+        if (isComplete === wasComplete) return;
+
+        await this.enrollmentsRepository.update(
+            { id: enrollment.id },
+            { completedAt: isComplete ? new Date() : null },
+        );
+
+        if (isComplete) {
+            this.eventEmitter.emit(
+                EVENTS.COURSE_COMPLETED,
+                new CourseCompletedEvent(userId, courseId),
+            );
+        }
     }
 
     /**

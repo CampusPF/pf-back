@@ -86,6 +86,9 @@ function makeService() {
         assertCanOpen: jest.fn(async () => undefined),
         assertCanSubmit: jest.fn(async () => undefined),
         attemptsFor: jest.fn(async () => ({ maxAttempts: 2, attemptsLeft: 2, passed: false })),
+        // Aprobar un checkpoint puede terminar el curso; su regla se testea en
+        // course-progression.service.spec.ts.
+        settleCourseCompletion: jest.fn(async () => undefined),
     };
 
     const service = new QuizzesService(

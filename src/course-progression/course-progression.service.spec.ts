@@ -4,6 +4,7 @@ import {
     MAX_ATTEMPTS_PER_QUIZ,
 } from './course-progression.service';
 import { UserRole } from '../users/entities/user.entity';
+import { EVENTS } from '../events';
 
 /**
  * Unit de la progresión secuencial. Los repos se mockean con lo justo: acá se
@@ -47,6 +48,10 @@ interface Options {
     modules?: typeof MODULES;
     /** El curso lo dicta TEACHER. */
     isOwner?: boolean;
+    /** % de lecciones de la inscripción (para settleCourseCompletion). */
+    progressPercent?: number;
+    /** La inscripción ya tenía `completedAt` seteado. */
+    wasComplete?: boolean;
 }
 
 function makeService({
@@ -56,6 +61,8 @@ function makeService({
     quizzes = QUIZZES,
     modules = MODULES,
     isOwner = true,
+    progressPercent = 0,
+    wasComplete = false,
 }: Options = {}) {
     const modulesRepository = { find: jest.fn(async () => modules) };
     const lessonsRepository = {
@@ -66,7 +73,14 @@ function makeService({
     const progressRepository = {
         find: jest.fn(async () => completed.map((id) => ({ id: `p-${id}`, lesson: { id } }))),
     };
-    const enrollmentsRepository = { findOne: jest.fn(async () => ({ id: 'enr-1' })) };
+    const enrollmentsRepository = {
+        findOne: jest.fn(async () => ({
+            id: 'enr-1',
+            progressPercent,
+            completedAt: wasComplete ? new Date('2026-01-01') : null,
+        })),
+        update: jest.fn(async () => undefined),
+    };
     const quizzesRepository = { find: jest.fn(async () => quizzes) };
     // Todos los quizzes del fixture tienen preguntas.
     const questionsRepository = {
@@ -90,6 +104,7 @@ function makeService({
         })),
     };
     const coursesRepository = { exists: jest.fn(async () => isOwner) };
+    const eventEmitter = { emit: jest.fn() };
 
     const service = new CourseProgressionService(
         modulesRepository as never,
@@ -100,9 +115,10 @@ function makeService({
         questionsRepository as never,
         attemptsRepository as never,
         coursesRepository as never,
+        eventEmitter as never,
     );
 
-    return { service, enrollmentsRepository, attemptsRepository };
+    return { service, enrollmentsRepository, attemptsRepository, eventEmitter };
 }
 
 describe('CourseProgressionService — desbloqueo de módulos', () => {
@@ -414,5 +430,110 @@ describe('CourseProgressionService.canOpenLesson', () => {
     it('una lección sin módulo no se bloquea acá', async () => {
         const { service } = makeService();
         await expect(service.canOpenLesson(STUDENT, COURSE_ID, null)).resolves.toBe(true);
+    });
+});
+
+/* El mail de "curso completado" promete el certificado. Antes salía con las
+   lecciones al 100% y el checkpoint final todavía pendiente: el alumno recibía
+   la promesa y el certificado le daba 400. */
+describe('CourseProgressionService.settleCourseCompletion', () => {
+    const ALL_PASSED = ['quiz-1', 'quiz-2', 'quiz-final'];
+
+    it('lecciones al 100% pero con checkpoints pendientes → NO completa el curso', async () => {
+        const { service, eventEmitter, enrollmentsRepository } = makeService({
+            progressPercent: 100,
+            passed: ['quiz-1', 'quiz-2'], // falta el final
+        });
+
+        await service.settleCourseCompletion(STUDENT.id, COURSE_ID);
+
+        expect(eventEmitter.emit).not.toHaveBeenCalled();
+        expect(enrollmentsRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('checkpoints aprobados pero lecciones incompletas → tampoco', async () => {
+        const { service, eventEmitter } = makeService({
+            progressPercent: 80,
+            passed: ALL_PASSED,
+        });
+
+        await service.settleCourseCompletion(STUDENT.id, COURSE_ID);
+
+        expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('lecciones al 100% Y todos los checkpoints → marca y emite COURSE_COMPLETED', async () => {
+        const { service, eventEmitter, enrollmentsRepository } = makeService({
+            progressPercent: 100,
+            passed: ALL_PASSED,
+        });
+
+        await service.settleCourseCompletion(STUDENT.id, COURSE_ID);
+
+        expect(enrollmentsRepository.update).toHaveBeenCalledWith(
+            { id: 'enr-1' },
+            { completedAt: expect.any(Date) },
+        );
+        expect(eventEmitter.emit).toHaveBeenCalledWith(
+            EVENTS.COURSE_COMPLETED,
+            expect.objectContaining({ userId: STUDENT.id, courseId: COURSE_ID }),
+        );
+    });
+
+    /* El guardia de idempotencia: sin esto, cada lección que se marcara
+       después de terminar el curso volvería a mandar el mail. */
+    it('si ya estaba completo, no vuelve a emitir', async () => {
+        const { service, eventEmitter, enrollmentsRepository } = makeService({
+            progressPercent: 100,
+            passed: ALL_PASSED,
+            wasComplete: true,
+        });
+
+        await service.settleCourseCompletion(STUDENT.id, COURSE_ID);
+
+        expect(eventEmitter.emit).not.toHaveBeenCalled();
+        expect(enrollmentsRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('si deja de estar completo (desmarcó una lección), limpia completedAt sin emitir', async () => {
+        const { service, eventEmitter, enrollmentsRepository } = makeService({
+            progressPercent: 90,
+            passed: ALL_PASSED,
+            wasComplete: true,
+        });
+
+        await service.settleCourseCompletion(STUDENT.id, COURSE_ID);
+
+        expect(enrollmentsRepository.update).toHaveBeenCalledWith(
+            { id: 'enr-1' },
+            { completedAt: null },
+        );
+        expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('un curso SIN checkpoints se completa sólo con las lecciones', async () => {
+        const { service, eventEmitter } = makeService({
+            progressPercent: 100,
+            quizzes: [],
+        });
+
+        await service.settleCourseCompletion(STUDENT.id, COURSE_ID);
+
+        expect(eventEmitter.emit).toHaveBeenCalledWith(
+            EVENTS.COURSE_COMPLETED,
+            expect.anything(),
+        );
+    });
+
+    it('sin inscripción activa no hace nada', async () => {
+        const { service, eventEmitter, enrollmentsRepository } = makeService({
+            progressPercent: 100,
+            passed: ALL_PASSED,
+        });
+        enrollmentsRepository.findOne.mockResolvedValueOnce(null as never);
+
+        await service.settleCourseCompletion(STUDENT.id, COURSE_ID);
+
+        expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 });

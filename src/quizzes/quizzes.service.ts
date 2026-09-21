@@ -2,6 +2,7 @@ import {
     BadRequestException,
     ConflictException,
     Injectable,
+    Logger,
     NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -42,6 +43,8 @@ const UNANSWERED = 'Sin responder';
  */
 @Injectable()
 export class QuizzesService {
+    private readonly logger = new Logger(QuizzesService.name);
+
     constructor(
         @InjectRepository(Quiz)
         private readonly quizzesRepository: Repository<Quiz>,
@@ -171,6 +174,19 @@ export class QuizzesService {
                 EVENTS.QUIZ_PASSED,
                 new QuizPassedEvent(userId, quizId, quiz.courseId, score),
             );
+
+            /* Este checkpoint puede haber sido lo último que faltaba: el curso
+               son las lecciones al 100% Y todos los checkpoints aprobados, así
+               que terminarlo también puede pasar desde acá y no sólo al marcar
+               una lección. Si falla, el intento ya está guardado igual. */
+            await this.progression
+                .settleCourseCompletion(userId, quiz.courseId)
+                .catch((error: unknown) => {
+                    this.logger.error(
+                        `No se pudo resolver si ${userId} terminó el curso ${quiz.courseId}`,
+                        error instanceof Error ? error.stack : String(error),
+                    );
+                });
         }
 
         // Se relee DESPUÉS de guardar: es el número con este intento ya
