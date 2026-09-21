@@ -96,6 +96,20 @@ export class QuizzesController {
         return this.quizzesService.create(dto, user);
     }
 
+    @Get('courses/:courseId/quizzes/manage')
+    @UseGuards(RolesGuard)
+    @Roles(UserRole.TEACHER)
+    @ApiOperation({ summary: 'Todos los checkpoints de un curso para editarlos (con isCorrect, incluidos los vacíos)' })
+    @ApiOkResponse({ type: [TeacherQuizDto] })
+    @ApiResponse({ status: 403, description: NOT_OWNER })
+    @ApiResponse({ status: 404, description: 'Curso no encontrado' })
+    findCourseQuizzesForTeacher(
+        @Param('courseId', ParseUUIDPipe) courseId: string,
+        @CurrentUser() user: AuthUser,
+    ) {
+        return this.quizzesService.findCourseQuizzesForTeacher(courseId, user);
+    }
+
     @Get('quizzes/:quizId/manage')
     @UseGuards(RolesGuard)
     @Roles(UserRole.TEACHER)

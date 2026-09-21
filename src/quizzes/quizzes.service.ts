@@ -227,6 +227,32 @@ export class QuizzesService {
         return this.toTeacherDto(quiz);
     }
 
+    /**
+     * TODOS los quizzes del curso con `isCorrect`, para el editor del temario.
+     * A diferencia de findActiveQuizzes incluye los vacíos: un checkpoint recién
+     * creado no tiene preguntas y el docente tiene que verlo para cargarlas.
+     */
+    async findCourseQuizzesForTeacher(courseId: string, actor: Actor): Promise<TeacherQuizDto[]> {
+        const course = await this.coursesRepository.findOne({
+            where: { id: courseId },
+            relations: { instructor: true },
+        });
+        if (!course) throw new NotFoundException(`Curso con id ${courseId} no encontrado`);
+        assertCourseOwner(course, actor);
+
+        const quizzes = await this.quizzesRepository.find({
+            where: { courseId },
+            relations: { module: true },
+        });
+        quizzes.sort(
+            (a, b) =>
+                (a.module?.order ?? Number.MAX_SAFE_INTEGER) -
+                (b.module?.order ?? Number.MAX_SAFE_INTEGER),
+        );
+
+        return Promise.all(quizzes.map((quiz) => this.toTeacherDto(quiz)));
+    }
+
     /** El quiz con `isCorrect`, para editarlo. */
     async findForTeacher(quizId: string, actor: Actor): Promise<TeacherQuizDto> {
         const quiz = await this.findOwnedQuiz(quizId, actor);
