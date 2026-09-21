@@ -6,7 +6,8 @@ import { CronJob } from 'cron';
 import { DataSource } from 'typeorm';
 import { EmailNotificationsService } from './email-notifications.service';
 import { UnsubscribeTokenService } from './unsubscribe-token.service';
-import { MailTemplate, FRONT_ROUTES } from '../mail/mail-templates';
+import { FRONT_ROUTES } from '../mail/mail-templates';
+import { MailTemplate } from '../mail/templates';
 
 /** Fila de la consulta de alumnos inactivos: una por (alumno, curso). */
 interface InactiveEnrollmentRow {

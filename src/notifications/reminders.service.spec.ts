@@ -1,5 +1,5 @@
 import { RemindersService, isoWeekKey } from './reminders.service';
-import { MailTemplate } from '../mail/mail-templates';
+import { MailTemplate } from '../mail/templates';
 
 describe('isoWeekKey', () => {
     it.each([

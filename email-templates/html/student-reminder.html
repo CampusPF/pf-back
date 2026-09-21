@@ -23,7 +23,7 @@
           <td align="center" style="padding:0 0 24px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="padding-right:10px;"><img src="https://img.mailinblue.com/12210274/images/content_library/original/6ab109f94997083910c4cd28.png" width="36" height="36" alt="" style="display:block;border:0;border-radius:8px;"></td>
+                <td style="padding-right:10px;"><img src="http://localhost:3000/logo-campus.png" width="36" height="36" alt="" style="display:block;border:0;border-radius:8px;"></td>
                 <td style="font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:22px;font-weight:700;color:#0F0F14;">Campus</td>
               </tr>
             </table>
@@ -32,16 +32,16 @@
         <!-- Contenido -->
         <tr>
           <td class="card" bgcolor="#FFFFFF" style="background:#FFFFFF;border:1px solid #E4E4EA;border-radius:16px;padding:40px;">
-<h1 style="margin:0 0 16px;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:24px;line-height:1.3;font-weight:700;color:#0F0F14;">Te extrañamos, {{ params.name }}</h1><p style="margin:0 0 16px;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#4A4A57;">Hace <strong>{{ params.maxDaysInactive }} días</strong> que no entrás a alguno de tus cursos. Unos minutos hoy alcanzan para retomar el ritmo.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+<h1 style="margin:0 0 16px;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:24px;line-height:1.3;font-weight:700;color:#0F0F14;">Te extrañamos, Ana</h1><p style="margin:0 0 16px;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#4A4A57;">Hace <strong>9 días</strong> que no entrás a alguno de tus cursos. Unos minutos hoy alcanzan para retomar el ritmo.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
   <tr>
     <td style="background:#F6F6F7;border:1px solid #E4E4EA;border-radius:12px;padding:20px 24px;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#0F0F14;">
-{% for course in params.courses %}<div style="padding:6px 0;"><a href="{{ course.url }}" target="_blank" style="font-weight:600;color:#4F46E5;text-decoration:none;">{{ course.title }}</a><br><span style="font-size:13px;color:#6C6C82;">{{ course.daysInactive }} días sin actividad</span></div>{% endfor %}
+<div style="padding:6px 0;"><a href="https://campus.test/courses/python" target="_blank" style="font-weight:600;color:#4F46E5;text-decoration:none;">Python</a><br><span style="font-size:13px;color:#6C6C82;">9 días sin actividad</span></div>
     </td>
   </tr>
 </table><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;">
   <tr>
     <td align="center" bgcolor="#4F46E5" style="border-radius:8px;">
-      <a href="{{ params.myCoursesUrl }}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;line-height:1;color:#FFFFFF;text-decoration:none;border-radius:8px;">Retomar mis cursos</a>
+      <a href="https://campus.test/mis-cursos" target="_blank" style="display:inline-block;padding:14px 28px;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;line-height:1;color:#FFFFFF;text-decoration:none;border-radius:8px;">Retomar mis cursos</a>
     </td>
   </tr>
 </table>
@@ -52,7 +52,7 @@
         <tr>
           <td align="center" style="padding:24px 16px 0;font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;line-height:1.6;color:#6C6C82;">
             Campus — Aprendé con un tutor de IA a tu lado.<br>
-            Recibiste este mail porque tenés una cuenta en Campus.<br><a href="{{ params.unsubscribeUrl }}" target="_blank" style="color:#6C6C82;text-decoration:underline;">Dejar de recibir estos recordatorios</a>
+            Recibiste este mail porque tenés una cuenta en Campus.<br><a href="https://api.test/unsubscribe?token=t" target="_blank" style="color:#6C6C82;text-decoration:underline;">Dejar de recibir estos recordatorios</a>
           </td>
         </tr>
       </table>

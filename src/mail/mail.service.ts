@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BrevoClient } from '@getbrevo/brevo';
+import { mailLogoUrl } from './mail-templates';
+import { MailParams, MailTemplate, renderMail } from './templates';
 
 /**
  * Único punto de salida de mails de la app. Todo lo que mande correo
@@ -84,41 +86,39 @@ export class MailService {
     }
 
     /**
-     * Manda un mail usando una plantilla de Brevo (diseñada en Stripo).
+     * Arma un mail con una de las plantillas locales (src/mail/templates) y lo
+     * manda. El asunto y el HTML se generan ACÁ, en el back: no hay nada
+     * alojado en Brevo, así que funciona con cualquier cuenta/API key.
      *
-     * El asunto y el HTML viven en la plantilla; acá sólo viajan los datos
-     * (`params`), que la plantilla lee como `{{ params.nombre }}`. Así el
-     * diseño se cambia en Brevo/Stripo sin tocar ni redeployar el back.
-     *
-     * `tags` sirve para filtrar los logs y las estadísticas en Brevo por tipo
-     * de mail. Mismo corte de dev y mismo manejo de errores que `send()`.
+     * `params` son los datos de la plantilla (todo se escapa al renderizar).
+     * `tags` sirve para filtrar logs y estadísticas en Brevo por tipo de mail.
+     * Mismo corte de dev y mismo manejo de errores que `send()`.
      */
     async sendTemplate(
         to: { email: string; name?: string },
-        templateId: number,
-        params: Record<string, unknown>,
+        template: MailTemplate,
+        params: MailParams,
         tags: string[] = [],
     ): Promise<void> {
+        const { subject, html } = renderMail(template, params, {
+            logoUrl: mailLogoUrl(this.config),
+        });
+
         if (!this.deliveryEnabled) {
             this.logger.log(
                 `[DEV] Mail NO enviado (se enviaría a ${to.email})\n` +
-                `  Plantilla: ${templateId}  Tags: ${tags.join(', ') || '-'}\n` +
+                `  Plantilla: ${template}  Tags: ${tags.join(', ') || '-'}\n` +
+                `  Asunto: ${subject}\n` +
                 `  Params: ${JSON.stringify(params, null, 2)}`,
             );
             return;
         }
 
-        if (!templateId) {
-            throw new ServiceUnavailableException(
-                `Plantilla de mail no configurada (tags: ${tags.join(', ')}).`,
-            );
-        }
-
         await this.requireClient().transactionalEmails.sendTransacEmail({
             to: [to.name ? { email: to.email, name: to.name } : { email: to.email }],
             sender: this.sender(),
-            templateId,
-            params,
+            subject,
+            htmlContent: html,
             tags,
         });
     }

@@ -22,13 +22,6 @@ const requiredInProd = <T extends Joi.AnySchema>(schema: T): T =>
     otherwise: Joi.any().optional(),
   }) as T;
 
-/**
- * ID de plantilla de Brevo. `.empty('')`: en el .env de dev las plantillas
- * suelen quedar como `BREVO_TPL_X=` (vacías), y eso tiene que valer lo mismo
- * que no definirla, no fallar con "must be a number".
- */
-const brevoTemplateId = Joi.number().integer().positive().empty('');
-
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'test', 'production')
@@ -148,20 +141,9 @@ export const envValidationSchema = Joi.object({
   // mails de dev se escriben en el log.
   MAIL_FORCE_SEND: Joi.boolean().truthy('true').falsy('false').default(false),
 
-  // IDs de las plantillas transaccionales de Brevo (diseñadas en Stripo y
-  // exportadas a Brevo). Ver src/mail/mail-templates.ts.
-  BREVO_TPL_RESET_PASSWORD: requiredInProd(brevoTemplateId),
-  BREVO_TPL_WELCOME_STUDENT: requiredInProd(brevoTemplateId),
-  BREVO_TPL_WELCOME_TEACHER: requiredInProd(brevoTemplateId),
-  BREVO_TPL_WELCOME_ADMIN: requiredInProd(brevoTemplateId),
-  BREVO_TPL_COURSE_ENROLLED: requiredInProd(brevoTemplateId),
-  BREVO_TPL_COURSE_PURCHASED: requiredInProd(brevoTemplateId),
-  BREVO_TPL_COURSE_COMPLETED: requiredInProd(brevoTemplateId),
-  BREVO_TPL_CERTIFICATE: requiredInProd(brevoTemplateId),
-  BREVO_TPL_PREMIUM_CONFIRMED: requiredInProd(brevoTemplateId),
-  BREVO_TPL_STUDENT_REMINDER: requiredInProd(brevoTemplateId),
-  BREVO_TPL_TEACHER_NEW_STUDENT: requiredInProd(brevoTemplateId),
-  BREVO_TPL_TEACHER_REMINDER: requiredInProd(brevoTemplateId),
+  // URL pública del logo de los mails. Opcional: por defecto se usa
+  // FRONTEND_URL + /logo-campus.png (pf-front/public). Ver src/mail/mail-templates.ts.
+  MAIL_LOGO_URL: Joi.string().uri().empty(''),
 
   // --- Recordatorios semanales (cron) ---
   REMINDER_CRON: Joi.string().default('0 10 * * 1'),

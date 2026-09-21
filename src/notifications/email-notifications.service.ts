@@ -12,12 +12,8 @@ import {
     SubscriptionStatus,
 } from '../subscriptions/entities/subscription.entity';
 import { MailService } from '../mail/mail.service';
-import {
-    FRONT_ROUTES,
-    MailTemplate,
-    frontendUrl,
-    templateId,
-} from '../mail/mail-templates';
+import { FRONT_ROUTES, frontendUrl } from '../mail/mail-templates';
+import { MailTemplate } from '../mail/templates';
 import { ResetTokenService } from '../auth/reset-token.service';
 
 /** Lo que hace falta para mandar un mail y dejarlo registrado. */
@@ -48,8 +44,8 @@ const WELCOME_TEMPLATE: Record<UserRole, MailTemplate> = {
 };
 
 /**
- * Arma y manda los mails de notificación (plantillas de Brevo diseñadas en
- * Stripo) y deja cada envío registrado en la tabla `notification`
+ * Arma y manda los mails de notificación (plantillas locales de
+ * src/mail/templates) y deja cada envío registrado en la tabla `notification`
  * (channel 'email').
  *
  * Ese registro es también el candado anti-duplicados: antes de mandar se
@@ -407,7 +403,7 @@ export class EmailNotificationsService {
         try {
             await this.mail.sendTemplate(
                 { email: req.user.email, name: req.user.name },
-                templateId(this.config, req.template),
+                req.template,
                 req.params,
                 [req.tag],
             );

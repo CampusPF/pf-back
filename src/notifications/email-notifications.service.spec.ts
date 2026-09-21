@@ -1,7 +1,7 @@
 import { EmailNotificationsService } from './email-notifications.service';
 import { UserRole } from '../users/entities/user.entity';
 import { PaymentType } from '../payments/entities/payment.entity';
-import { MailTemplate } from '../mail/mail-templates';
+import { MailTemplate } from '../mail/templates';
 
 /**
  * Foco: qué plantilla y qué params se mandan en cada caso, y que la
@@ -11,13 +11,6 @@ import { MailTemplate } from '../mail/mail-templates';
 
 const CONFIG: Record<string, unknown> = {
     FRONTEND_URL: 'https://campus.test,http://localhost:3000',
-    BREVO_TPL_WELCOME_STUDENT: 1,
-    BREVO_TPL_WELCOME_TEACHER: 2,
-    BREVO_TPL_WELCOME_ADMIN: 3,
-    BREVO_TPL_COURSE_ENROLLED: 4,
-    BREVO_TPL_COURSE_PURCHASED: 5,
-    BREVO_TPL_PREMIUM_CONFIRMED: 6,
-    BREVO_TPL_TEACHER_NEW_STUDENT: 7,
 };
 
 const STUDENT = { id: 'u-1', name: 'Ana', email: 'ana@test.com', role: UserRole.STUDENT };
@@ -100,10 +93,10 @@ function makeService() {
 describe('EmailNotificationsService', () => {
     describe('bienvenida', () => {
         it.each([
-            [UserRole.STUDENT, 1],
-            [UserRole.TEACHER, 2],
-            [UserRole.ADMIN, 3],
-        ])('rol %s → plantilla %i', async (role, expectedTemplate) => {
+            [UserRole.STUDENT, MailTemplate.WELCOME_STUDENT],
+            [UserRole.TEACHER, MailTemplate.WELCOME_TEACHER],
+            [UserRole.ADMIN, MailTemplate.WELCOME_ADMIN],
+        ])('rol %s → plantilla %s', async (role, expectedTemplate) => {
             const { service, mail, userQuery } = makeService();
             userQuery.getOne.mockResolvedValueOnce({ ...STUDENT, role, passwordHash: 'h' });
 
@@ -165,7 +158,7 @@ describe('EmailNotificationsService', () => {
 
             expect(mail.sendTemplate).toHaveBeenCalledWith(
                 expect.anything(),
-                4,
+                MailTemplate.COURSE_ENROLLED,
                 expect.objectContaining({
                     courseTitle: 'NestJS',
                     firstLessonUrl: 'https://campus.test/courses/nestjs/learn/l-1',
@@ -206,7 +199,7 @@ describe('EmailNotificationsService', () => {
 
             expect(mail.sendTemplate).toHaveBeenCalledWith(
                 { email: 'tomas@test.com', name: 'Tomás' },
-                7,
+                MailTemplate.TEACHER_NEW_STUDENT,
                 expect.objectContaining({
                     studentName: 'Ana',
                     courseTitle: 'NestJS',
@@ -244,7 +237,7 @@ describe('EmailNotificationsService', () => {
 
             expect(mail.sendTemplate).toHaveBeenCalledWith(
                 expect.anything(),
-                5,
+                MailTemplate.COURSE_PURCHASED,
                 expect.objectContaining({ courseTitle: 'NestJS', currency: 'USD', paymentId: 'p-1' }),
                 ['course-purchased'],
             );
@@ -268,7 +261,7 @@ describe('EmailNotificationsService', () => {
 
             expect(mail.sendTemplate).toHaveBeenCalledWith(
                 expect.anything(),
-                6,
+                MailTemplate.PREMIUM_CONFIRMED,
                 expect.objectContaining({ planName: 'Premium', validUntil: expect.any(String) }),
                 ['premium-confirmed'],
             );

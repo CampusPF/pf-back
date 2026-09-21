@@ -15,7 +15,7 @@ import { UnsubscribeTokenService } from './unsubscribe-token.service';
 import { NotificationsController } from './notifications.controller';
 
 /**
- * Notificaciones por mail (plantillas de Brevo diseñadas en Stripo):
+ * Notificaciones por mail (HTML generado en src/mail/templates):
  *  - EmailNotificationsListener: mails disparados por eventos de dominio
  *    (bienvenida, inscripción, pago, curso completado, certificado).
  *  - RemindersService: recordatorios semanales por cron.

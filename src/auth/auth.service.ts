@@ -20,12 +20,8 @@ import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { normalizeEmail } from '../common/utils/normalize-email.util';
 import { ResetTokenService } from './reset-token.service';
 import { MailService } from '../mail/mail.service';
-import {
-    FRONT_ROUTES,
-    MailTemplate,
-    frontendUrl,
-    templateId,
-} from '../mail/mail-templates';
+import { FRONT_ROUTES, frontendUrl } from '../mail/mail-templates';
+import { MailTemplate } from '../mail/templates';
 import { EVENTS, UserRegisteredEvent } from '../events';
 
 /** Código de Postgres para "unique_violation". */
@@ -277,13 +273,13 @@ export class AuthService {
             );
             const resetUrl = frontendUrl(this.config, FRONT_ROUTES.resetPassword(token));
 
-            // Plantilla de Brevo (diseñada en Stripo). Es la misma para
+            // Plantilla local (src/mail/templates). Es la misma para
             // estudiante, docente y admin. No se registra en `notifications`:
             // se puede pedir cuantas veces haga falta.
             void this.mailService
                 .sendTemplate(
                     { email: user.email, name: user.name },
-                    templateId(this.config, MailTemplate.RESET_PASSWORD),
+                    MailTemplate.RESET_PASSWORD,
                     {
                         name: user.name,
                         resetUrl,
