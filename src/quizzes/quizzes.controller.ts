@@ -61,6 +61,10 @@ export class QuizzesController {
     @Get('quizzes/:quizId')
     @ApiOperation({ summary: 'Obtener un checkpoint para rendirlo (sin respuestas correctas)' })
     @ApiOkResponse({ type: StudentQuizDto })
+    @ApiResponse({
+        status: 403,
+        description: 'Te faltan lecciones, no llegaste a este módulo, o agotaste los intentos',
+    })
     @ApiResponse({ status: 404, description: 'No existe o no estás inscripto en el curso' })
     findForStudent(
         @Param('quizId', ParseUUIDPipe) quizId: string,
@@ -73,13 +77,17 @@ export class QuizzesController {
     @ApiOperation({ summary: 'Enviar mis respuestas y obtener el intento corregido' })
     @ApiResponse({ status: 201, type: QuizAttemptResultDto, description: 'Intento corregido' })
     @ApiResponse({ status: 400, description: 'Una respuesta no corresponde a este checkpoint' })
+    @ApiResponse({
+        status: 403,
+        description: 'Te faltan lecciones, no llegaste a este módulo, o agotaste los intentos',
+    })
     @ApiResponse({ status: 404, description: 'No existe o no estás inscripto en el curso' })
     submitAttempt(
         @Param('quizId', ParseUUIDPipe) quizId: string,
         @Body() dto: SubmitAttemptDto,
-        @CurrentUser('id') userId: string,
+        @CurrentUser() user: AuthUser,
     ) {
-        return this.quizzesService.submitAttempt(quizId, userId, dto);
+        return this.quizzesService.submitAttempt(quizId, user, dto);
     }
 
     // ─── Docente dueño ─────────────────────────────────────────────────────

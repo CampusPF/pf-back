@@ -11,6 +11,7 @@ import { CourseModule as CourseModuleEntity } from '../course-modules/entities/c
 import { CourseEnrollmentsModule } from '../course-enrollments/course-enrollments.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { FileUploadModule } from '../file-upload/file-upload.module';
+import { CourseProgressionModule } from '../course-progression/course-progression.module';
 
 @Module({
   imports: [
@@ -18,6 +19,8 @@ import { FileUploadModule } from '../file-upload/file-upload.module';
     CourseEnrollmentsModule,
     SubscriptionsModule,
     FileUploadModule,
+    // Segundo gate: el módulo tiene que estar desbloqueado en la progresión.
+    CourseProgressionModule,
   ],
   controllers: [LessonsController, LessonResourcesController],
   providers: [LessonsService, LessonsAccessService, LessonResourcesService],

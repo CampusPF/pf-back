@@ -37,6 +37,17 @@ export class QuizAttemptResultDto {
     @ApiProperty({ example: 3 })
     totalQuestions: number;
 
+    /**
+     * Intentos que quedan DESPUÉS de éste, ya descontado.
+     *
+     * Viaja en la respuesta y no lo calcula el front restando uno: la pantalla
+     * del quiz se carga una sola vez, y al segundo intento su número local ya
+     * estaba viejo — seguía ofreciendo "volver a intentar" con los intentos
+     * agotados.
+     */
+    @ApiProperty({ example: 1 })
+    attemptsLeft: number;
+
     @ApiProperty({ type: [QuizAttemptDetailDto] })
     details: QuizAttemptDetailDto[];
 }

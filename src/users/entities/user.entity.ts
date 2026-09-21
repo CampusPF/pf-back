@@ -81,6 +81,12 @@ export class User {
     @Column({ nullable: true, length: 100 })
     country: string;
 
+    /* false = pidió no recibir más recordatorios por mail (link de baja del
+       recordatorio semanal). Sólo afecta a los recordatorios: los mails
+       transaccionales (reset, compra, inscripción) se mandan igual. */
+    @Column({ name: 'email_reminders_enabled', type: 'boolean', default: true })
+    emailRemindersEnabled: boolean;
+
     @OneToMany(() => CourseEnrollment, (enrollment) => enrollment.student)
     enrollments: CourseEnrollment[];
 

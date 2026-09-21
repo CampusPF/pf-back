@@ -2,6 +2,7 @@ import {
     BadRequestException,
     ConflictException,
     Injectable,
+    Logger,
     NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -26,6 +27,7 @@ import { QuestionWithOptions, StudentQuizDto } from './dto/student-quiz.dto';
 import { TeacherQuizDto } from './dto/teacher-quiz.dto';
 import { CourseCheckpointDto } from './dto/course-checkpoint.dto';
 import { QuizAttemptDetailDto, QuizAttemptResultDto } from './dto/quiz-attempt-result.dto';
+import { CourseProgressionService } from '../course-progression/course-progression.service';
 
 const NOT_FOUND_MESSAGE = 'Checkpoint no encontrado';
 const UNANSWERED = 'Sin responder';
@@ -41,6 +43,8 @@ const UNANSWERED = 'Sin responder';
  */
 @Injectable()
 export class QuizzesService {
+    private readonly logger = new Logger(QuizzesService.name);
+
     constructor(
         @InjectRepository(Quiz)
         private readonly quizzesRepository: Repository<Quiz>,
@@ -58,6 +62,7 @@ export class QuizzesService {
         private readonly enrollmentsRepository: Repository<CourseEnrollment>,
         private readonly dataSource: DataSource,
         private readonly eventEmitter: EventEmitter2,
+        private readonly progression: CourseProgressionService,
     ) { }
 
     // ─── Alumno ────────────────────────────────────────────────────────────
@@ -73,9 +78,22 @@ export class QuizzesService {
         if (!this.isActive(quiz, questions.length)) throw new NotFoundException(NOT_FOUND_MESSAGE);
 
         const isOwner = quiz.course?.instructor?.id === actor.id;
-        if (!isOwner) await this.assertEnrolled(actor.id, quiz.courseId);
+        if (!isOwner) {
+            await this.assertEnrolled(actor.id, quiz.courseId);
+            /* No alcanza con estar inscripto: hay que haber llegado hasta acá.
+               Sin esto, el que tiene el id del quiz lo abre salteándose las
+               lecciones y los módulos anteriores.
 
-        return StudentQuizDto.from(quiz, questions);
+               Es el gate de ABRIR, no el de rendir: uno ya aprobado se puede
+               volver a ver, pero no volver a rendir (ver submitAttempt). */
+            await this.progression.assertCanOpen(actor, quiz.courseId, quizId);
+        }
+
+        return StudentQuizDto.from(
+            quiz,
+            questions,
+            await this.progression.attemptsFor(actor.id, quizId),
+        );
     }
 
     /** Los checkpoints vigentes de un curso y si el usuario ya aprobó cada uno. */
@@ -89,6 +107,7 @@ export class QuizzesService {
             quizId: quiz.id,
             moduleId: quiz.moduleId,
             moduleOrder: quiz.module?.order ?? null,
+            title: quiz.title,
             passed: passed.has(quiz.id),
         }));
     }
@@ -100,13 +119,19 @@ export class QuizzesService {
      */
     async submitAttempt(
         quizId: string,
-        userId: string,
+        actor: Actor,
         dto: SubmitAttemptDto,
     ): Promise<QuizAttemptResultDto> {
+        const userId = actor.id;
         const quiz = await this.findQuizWithCourse(quizId);
         const questions = await this.loadQuestions(quizId);
         if (!this.isActive(quiz, questions.length)) throw new NotFoundException(NOT_FOUND_MESSAGE);
         await this.assertEnrolled(userId, quiz.courseId);
+
+        /* Se vuelve a chequear al enviar, no sólo al abrir: entre que se cargó
+           la pantalla y se mandan las respuestas pueden haberse agotado los
+           intentos —o haberse aprobado el checkpoint— en otra pestaña. */
+        await this.progression.assertCanSubmit(actor, quiz.courseId, quizId);
 
         const selectedByQuestion = this.validateAnswers(questions, dto);
 
@@ -149,7 +174,25 @@ export class QuizzesService {
                 EVENTS.QUIZ_PASSED,
                 new QuizPassedEvent(userId, quizId, quiz.courseId, score),
             );
+
+            /* Este checkpoint puede haber sido lo último que faltaba: el curso
+               son las lecciones al 100% Y todos los checkpoints aprobados, así
+               que terminarlo también puede pasar desde acá y no sólo al marcar
+               una lección. Si falla, el intento ya está guardado igual. */
+            await this.progression
+                .settleCourseCompletion(userId, quiz.courseId)
+                .catch((error: unknown) => {
+                    this.logger.error(
+                        `No se pudo resolver si ${userId} terminó el curso ${quiz.courseId}`,
+                        error instanceof Error ? error.stack : String(error),
+                    );
+                });
         }
+
+        // Se relee DESPUÉS de guardar: es el número con este intento ya
+        // descontado, que es el que la pantalla necesita para decidir si
+        // todavía ofrece reintentar.
+        const { attemptsLeft } = await this.progression.attemptsFor(userId, quizId);
 
         return {
             score,
@@ -157,6 +200,7 @@ export class QuizzesService {
             passingScore: quiz.passingScore,
             correctCount,
             totalQuestions,
+            attemptsLeft,
             details,
         };
     }

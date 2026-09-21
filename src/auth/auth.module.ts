@@ -29,7 +29,9 @@ import { MailModule } from '../mail/mail.module';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, GoogleStrategy, ResetTokenService],
-  exports: [JwtModule, PassportModule],
+  // ResetTokenService: NotificationsModule arma con él el link para definir
+  // la contraseña en la bienvenida de las cuentas que crea un admin.
+  exports: [JwtModule, PassportModule, ResetTokenService],
 
 })
 export class AuthModule { }
