@@ -10,8 +10,13 @@ import { LessonResource } from '../../lessons/entities/lesson-resource.entity';
 import { LessonProgress } from '../../lesson-progress/entities/lesson-progress.entity';
 import { Subscription } from '../../subscriptions/entities/subscription.entity';
 import { Achievement } from '../../achievements/entities/achievement.entity';
+import { Quiz } from '../../quizzes/entities/quiz.entity';
+import { Question } from '../../quizzes/entities/question.entity';
+import { Option } from '../../quizzes/entities/option.entity';
+import { QuizAttempt } from '../../quizzes/entities/quiz-attempt.entity';
 import { seedCourses } from './course.seed';
 import { seedLessons } from './lesson.seed';
+import { seedQuizzes } from './quiz.seed';
 import { seedAchievements } from './achievement.seed';
 
 config(); // carga variables desde .env
@@ -48,6 +53,10 @@ const dataSource = new DataSource({
         LessonProgress,
         Subscription,
         Achievement,
+        Quiz,
+        Question,
+        Option,
+        QuizAttempt,
     ],
     synchronize: false, // el seeder no debe crear/alterar el esquema
 });
@@ -58,6 +67,7 @@ async function run() {
 
     await seedCourses(dataSource);
     await seedLessons(dataSource);
+    await seedQuizzes(dataSource);
     await seedAchievements(dataSource);
 
     await dataSource.destroy();

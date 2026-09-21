@@ -17,6 +17,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { CloudinaryService, UPLOAD_FOLDERS } from '../file-upload/cloudinary.service';
 import { generateCertificatePdf } from './certificate-pdf';
+import { QuizzesService } from '../quizzes/quizzes.service';
 
 /** Lo que ve cualquiera que verifique un código, sin estar logueado. */
 export interface PublicVerification {
@@ -48,6 +49,7 @@ export class CertificatesService {
         private readonly cloudinary: CloudinaryService,
         private readonly config: ConfigService,
         private readonly eventEmitter: EventEmitter2,
+        private readonly quizzesService: QuizzesService,
     ) { }
 
     /**
@@ -88,11 +90,15 @@ export class CertificatesService {
             );
         }
 
-        // TODO (cuando exista el módulo de checkpoints): además del 100% de
-        // lecciones, hay que exigir tener aprobados todos los quizzes del curso:
-        //   const quizzesOk = await this.quizService.hasPassedAllQuizzes(userId, courseId);
-        //   if (!quizzesOk) throw new BadRequestException('Te falta aprobar un checkpoint');
-        // Ese service todavía no existe (es otra tarea), por eso no se llama.
+        // Además del 100% de lecciones, tienen que estar aprobados todos los
+        // checkpoints del curso (los de módulo y el de fin de curso). El front
+        // muestra este mensaje tal cual.
+        const quizzesOk = await this.quizzesService.hasPassedAllQuizzes(userId, courseId);
+        if (!quizzesOk) {
+            throw new BadRequestException(
+                'Te falta aprobar un checkpoint del curso para obtener el certificado',
+            );
+        }
 
         // 3. Código corto y único.
         const code = await this.generateUniqueCode();
