@@ -7,6 +7,7 @@ import { Notification } from '../notifications/entities/notification.entity';
 import { CertificatesService } from './certificates.service';
 import { CertificatesController } from './certificates.controller';
 import { FileUploadModule } from '../file-upload/file-upload.module';
+import { QuizzesModule } from '../quizzes/quizzes.module';
 
 /**
  * Certificados: emisión (PDF + QR + Cloudinary) y verificación pública.
@@ -18,6 +19,8 @@ import { FileUploadModule } from '../file-upload/file-upload.module';
     imports: [
         TypeOrmModule.forFeature([Certificate, CourseEnrollment, Lesson, Notification]),
         FileUploadModule,
+        // hasPassedAllQuizzes: el certificado exige los checkpoints aprobados.
+        QuizzesModule,
     ],
     controllers: [CertificatesController],
     providers: [CertificatesService],

@@ -29,7 +29,10 @@ export class CertificatesController {
     @ApiBearerAuth()
     @ApiOperation({ summary: 'Emitir mi certificado de un curso completado' })
     @ApiResponse({ status: 201, description: 'Certificado emitido' })
-    @ApiResponse({ status: 400, description: 'Todavía no completaste el curso' })
+    @ApiResponse({
+        status: 400,
+        description: 'Todavía no completaste el curso, o te falta aprobar un checkpoint',
+    })
     @ApiResponse({ status: 404, description: 'No estás inscripto en este curso' })
     @ApiResponse({ status: 409, description: 'Ya tenés un certificado para este curso' })
     issue(

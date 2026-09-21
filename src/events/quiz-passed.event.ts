@@ -1,9 +1,9 @@
 /**
  * El alumno aprobó un checkpoint / quiz.
  *
- * Todavía NADIE la emite: el módulo de checkpoints no existe. Está definida de
- * antemano para fijar el contrato ahora y que XP/logros puedan escucharla sin
- * renegociar la forma del evento.
+ * La emite QuizzesService.submitAttempt en cada intento aprobado (puede
+ * repetirse si el alumno vuelve a aprobar el mismo quiz). La escuchan XP y
+ * logros; el XP no se duplica porque su `reason` es único por quiz.
  */
 export class QuizPassedEvent {
   constructor(

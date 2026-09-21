@@ -4,11 +4,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Course } from '../courses/entities/course.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
-import { EVENTS, LessonCompletedEvent, CourseCompletedEvent } from '../events';
+import { EVENTS, LessonCompletedEvent, CourseCompletedEvent, QuizPassedEvent } from '../events';
 import { XpService } from './xp.service';
 import {
     DIFFICULTY_MULTIPLIER,
     XP_PER_LESSON,
+    XP_PER_QUIZ,
     XP_COURSE_BASE,
     XP_COURSE_PER_LESSON,
 } from './xp.config';
@@ -67,6 +68,25 @@ export class XpListener {
             );
         } catch (error) {
             this.logError('sumar XP por el curso', event.userId, error);
+        }
+    }
+
+    /**
+     * Aprobar el mismo quiz otra vez no suma de nuevo: el `reason` es único
+     * por (usuario, quiz) y addXp ignora el duplicado.
+     */
+    @OnEvent(EVENTS.QUIZ_PASSED)
+    async onQuizPassed(event: QuizPassedEvent): Promise<void> {
+        try {
+            const multiplier = await this.multiplierForCourse(event.courseId);
+
+            await this.xpService.addXp(
+                event.userId,
+                Math.round(XP_PER_QUIZ * multiplier),
+                `quiz_passed:${event.quizId}`,
+            );
+        } catch (error) {
+            this.logError('sumar XP por el checkpoint', event.userId, error);
         }
     }
 
