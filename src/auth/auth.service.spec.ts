@@ -127,9 +127,13 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
     // UsersService depende del repositorio de User y de CloudinaryService.
     // Este test no toca avatares, así que Cloudinary va vacío: si algún
     // camino lo usara por error, falla con un TypeError en vez de pasar.
+    // El bus de eventos va mockeado: acá no importa quién escucha el alta.
+    const eventEmitter = { emit: jest.fn() } as any;
+
     usersService = new UsersService(
       fakeRepo as any,
       {} as unknown as CloudinaryService,
+      eventEmitter,
     );
 
     // JwtService real de @nestjs/jwt no hace falta: lo único que AuthService
@@ -142,7 +146,17 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
 
     // AuthService también recibe el repositorio de User directo (lo usa en
     // loginWithGoogle), además de UsersService y JwtService.
-    authService = new AuthService(usersService, jwtService, fakeRepo as any);
+    // ResetTokenService, MailService y ConfigService no se usan en estos
+    // flujos (registro/login); van vacíos.
+    authService = new AuthService(
+      usersService,
+      jwtService,
+      fakeRepo as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      eventEmitter,
+    );
   });
 
   it('registro con email en mayúsculas + login con el mismo email en minúsculas → mismo user.id', async () => {

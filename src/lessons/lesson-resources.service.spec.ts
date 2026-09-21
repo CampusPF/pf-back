@@ -32,7 +32,12 @@ const ADMIN = { id: 'admin-1', role: UserRole.ADMIN };
 const OWNER_TEACHER = { id: INSTRUCTOR_ID, role: UserRole.TEACHER };
 const OTHER_TEACHER = { id: 'teacher-2', role: UserRole.TEACHER };
 
-function makeService({ hasAccess = true, resource = RESOURCE as LessonResource | null } = {}) {
+function makeService({
+    hasAccess = true,
+    /** El módulo está desbloqueado en la progresión secuencial del curso. */
+    unlocked = true,
+    resource = RESOURCE as LessonResource | null,
+} = {}) {
     const findOneLesson = jest.fn(async () => ({
         id: LESSON_ID,
         module: {
@@ -59,11 +64,15 @@ function makeService({ hasAccess = true, resource = RESOURCE as LessonResource |
         remove: jest.fn(async () => undefined),
     };
 
+    // Segundo gate, independiente del de acceso: la progresión del curso.
+    const canOpenLesson = jest.fn(async () => unlocked);
+
     const service = new LessonResourcesService(
         repo as unknown as Repository<LessonResource>,
         { findOne: findOneLesson } as unknown as LessonsService,
         { canAccessCourseContent } as unknown as LessonsAccessService,
         { getSignedUrl, destroy, uploadPrivateFile } as unknown as CloudinaryService,
+        { canOpenLesson } as never,
     );
 
     return {
@@ -71,6 +80,7 @@ function makeService({ hasAccess = true, resource = RESOURCE as LessonResource |
         repo,
         findOneLesson,
         canAccessCourseContent,
+        canOpenLesson,
         getSignedUrl,
         destroy,
         uploadPrivateFile,
@@ -84,6 +94,18 @@ describe('LessonResourcesService.getDownloadUrl', () => {
      */
     it('sin acceso al curso → 403 y no firma ninguna URL', async () => {
         const { service, getSignedUrl } = makeService({ hasAccess: false });
+
+        await expect(
+            service.getDownloadUrl(LESSON_ID, RESOURCE_ID, STUDENT),
+        ).rejects.toThrow(ForbiddenException);
+
+        expect(getSignedUrl).not.toHaveBeenCalled();
+    });
+
+    /* Tener acceso al curso no alcanza: sin este gate se bajaban los PDFs de
+       módulos todavía bloqueados con sólo conocer el id de la lección. */
+    it('módulo bloqueado por progresión → 403 aunque tenga acceso al curso', async () => {
+        const { service, getSignedUrl } = makeService({ hasAccess: true, unlocked: false });
 
         await expect(
             service.getDownloadUrl(LESSON_ID, RESOURCE_ID, STUDENT),

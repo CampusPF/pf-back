@@ -16,6 +16,9 @@ export const DIFFICULTY_MULTIPLIER: Record<CourseDifficulty, number> = {
 /** XP base por completar una lección, antes del multiplicador de dificultad. */
 export const XP_PER_LESSON = 10;
 
+/** XP base por aprobar un checkpoint (quiz), antes del multiplicador. Se suma una vez por quiz. */
+export const XP_PER_QUIZ = 25;
+
 /** XP por terminar un curso: una parte fija más otra por lección del curso. */
 export const XP_COURSE_BASE = 50;
 export const XP_COURSE_PER_LESSON = 5;

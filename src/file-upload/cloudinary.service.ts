@@ -153,6 +153,12 @@ export class CloudinaryService {
      *
      * `publicId` es el código del certificado, así que volver a subir el mismo
      * código sobrescribe el archivo en vez de dejar basura suelta.
+     *
+     * En los recursos `raw` la extensión forma parte del public_id: Cloudinary
+     * no la agrega sola ni la deduce del contenido. Sin el ".pdf" la URL
+     * termina en `.../CMP-XXXXXX` y se entrega como `application/octet-stream`
+     * con `Content-Disposition: attachment`: el navegador no puede mostrarlo
+     * en un <iframe> y la descarga baja sin extensión. Por eso se agrega acá.
      */
     async uploadPublicPdf(
         buffer: Buffer,
@@ -163,7 +169,7 @@ export class CloudinaryService {
             folder: this.folderPath(folder),
             // 'raw' porque un PDF no es una imagen que Cloudinary deba transformar.
             resource_type: 'raw',
-            public_id: publicId,
+            public_id: publicId.endsWith('.pdf') ? publicId : `${publicId}.pdf`,
             overwrite: true,
         });
 

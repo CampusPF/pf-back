@@ -5,6 +5,7 @@ import {
     LessonCompletedEvent,
     CourseCompletedEvent,
     CertificateIssuedEvent,
+    QuizPassedEvent,
 } from '../events';
 import { AchievementsService } from './achievements.service';
 
@@ -33,6 +34,11 @@ export class AchievementsListener {
 
     @OnEvent(EVENTS.CERTIFICATE_ISSUED)
     async onCertificateIssued(event: CertificateIssuedEvent): Promise<void> {
+        await this.evaluate(event.userId);
+    }
+
+    @OnEvent(EVENTS.QUIZ_PASSED)
+    async onQuizPassed(event: QuizPassedEvent): Promise<void> {
         await this.evaluate(event.userId);
     }
 

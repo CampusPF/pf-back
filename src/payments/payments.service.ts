@@ -37,12 +37,14 @@ export interface TeacherPaymentRow {
     date: Date;
 }
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import Stripe from 'stripe';
 import { Payment, PaymentStatus, PaymentType } from './entities/payment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { StripeService } from './stripe.service';
+import { EVENTS, PaymentSucceededEvent } from '../events';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
 import {
@@ -50,6 +52,13 @@ import {
     PLAN_CURRENCY,
 } from '../subscriptions/subscriptions.service';
 import { SubscriptionPlan } from '../subscriptions/entities/subscription.entity';
+
+/** Estados de un PaymentIntent en los que todavía se puede pagar con su client_secret. */
+const PAYABLE_INTENT_STATUSES: ReadonlySet<string> = new Set([
+    'requires_payment_method',
+    'requires_confirmation',
+    'requires_action',
+]);
 
 @Injectable()
 export class PaymentsService {
@@ -63,6 +72,7 @@ export class PaymentsService {
         private readonly coursesRepository: Repository<Course>,
         private readonly enrollmentsService: CourseEnrollmentsService,
         private readonly subscriptionsService: SubscriptionsService,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
     /**
@@ -104,6 +114,14 @@ export class PaymentsService {
             throw new ConflictException('Ya estás inscripto en este curso');
         }
 
+        const reusable = await this.reusePendingIntent(
+            userId,
+            { type: PaymentType.COURSE, courseId: course.id },
+            course.priceInCents,
+            course.currency,
+        );
+        if (reusable) return { clientSecret: reusable };
+
         const intent = await this.stripeService.stripe.paymentIntents.create({
             amount: course.priceInCents,
             currency: course.currency,
@@ -139,6 +157,14 @@ export class PaymentsService {
             throw new ConflictException('Ya tenés una suscripción activa');
         }
 
+        const reusable = await this.reusePendingIntent(
+            userId,
+            { type: PaymentType.SUBSCRIPTION, plan },
+            amountInCents,
+            PLAN_CURRENCY,
+        );
+        if (reusable) return { clientSecret: reusable };
+
         const intent = await this.stripeService.stripe.paymentIntents.create({
             amount: amountInCents,
             currency: PLAN_CURRENCY,
@@ -160,6 +186,61 @@ export class PaymentsService {
         });
 
         return { clientSecret: this.requireClientSecret(intent) };
+    }
+
+    /**
+     * Client secret de un pago pendiente que sigue sirviendo para lo mismo, o
+     * `null` si hay que crear uno nuevo.
+     *
+     * Abrir el checkout crea un PaymentIntent y una fila `pending`. Sin esto,
+     * cada visita (recargar, volver atrás, abrirlo dos veces) dejaba una fila
+     * más y el historial de pagos del alumno se llenaba de "Pendiente". Se
+     * reutiliza el último pendiente del MISMO usuario, del MISMO curso o plan,
+     * siempre que Stripe confirme que todavía se puede pagar y que el monto y
+     * la moneda son los de hoy (si el precio cambió, ese intent ya no vale).
+     *
+     * Si Stripe falla al consultarlo, no se bloquea la compra: se crea uno
+     * nuevo, que es lo que pasaba antes.
+     */
+    private async reusePendingIntent(
+        userId: string,
+        target: { type: PaymentType; courseId?: string; plan?: SubscriptionPlan },
+        amountInCents: number,
+        currency: string,
+    ): Promise<string | null> {
+        const where: FindOptionsWhere<Payment> = {
+            user: { id: userId },
+            type: target.type,
+            status: PaymentStatus.PENDING,
+        };
+        if (target.courseId) where.course = { id: target.courseId };
+        if (target.plan) where.plan = target.plan;
+
+        const pending = await this.paymentsRepository.findOne({
+            where,
+            order: { createdAt: 'DESC' },
+        });
+        if (!pending) return null;
+
+        try {
+            const intent = await this.stripeService.stripe.paymentIntents.retrieve(
+                pending.stripePaymentIntentId,
+            );
+            const isReusable =
+                PAYABLE_INTENT_STATUSES.has(intent.status) &&
+                intent.amount === amountInCents &&
+                intent.currency.toLowerCase() === currency.toLowerCase() &&
+                Boolean(intent.client_secret);
+
+            return isReusable ? intent.client_secret : null;
+        } catch (error) {
+            this.logger.warn(
+                `No se pudo reutilizar el PaymentIntent ${pending.stripePaymentIntentId}: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            );
+            return null;
+        }
     }
 
     private persistPendingPayment(args: {
@@ -296,6 +377,13 @@ export class PaymentsService {
 
         payment.status = PaymentStatus.SUCCEEDED;
         await this.paymentsRepository.save(payment);
+
+        // Comprobante de compra / confirmación de Premium por mail. Después
+        // del save: sólo se avisa un pago que quedó efectivamente registrado.
+        this.eventEmitter.emit(
+            EVENTS.PAYMENT_SUCCEEDED,
+            new PaymentSucceededEvent(payment.id),
+        );
     }
 
     private async grantCourseAccess(payment: Payment): Promise<void> {

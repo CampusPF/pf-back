@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   ForbiddenException,
@@ -14,9 +15,12 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { UserRole } from '../users/entities/user.entity';
 import { CreateLessonProgressDto } from './dto/create-lesson-progress.dto';
 import { UpdateLessonProgressDto } from './dto/update-lesson-progress.dto';
+import { CourseProgressionService } from '../course-progression/course-progression.service';
 
 @Injectable()
 export class LessonProgressService {
+  private readonly logger = new Logger(LessonProgressService.name);
+
   constructor(
     @InjectRepository(LessonProgress)
     private readonly lessonProgressRepository: Repository<LessonProgress>,
@@ -25,6 +29,7 @@ export class LessonProgressService {
     @InjectRepository(Lesson)
     private readonly lessonsRepository: Repository<Lesson>,
     private readonly eventEmitter: EventEmitter2,
+    private readonly progression: CourseProgressionService,
   ) { }
 
   async create(dto: CreateLessonProgressDto, userId: string): Promise<LessonProgress> {
@@ -44,10 +49,14 @@ export class LessonProgressService {
 
     const lesson = await this.lessonsRepository.findOne({
       where: { id: dto.lessonId },
+      // El módulo hace falta para el gate de progresión de abajo.
+      relations: { module: true },
     });
     if (!lesson) {
       throw new NotFoundException(`Lección con id ${dto.lessonId} no encontrada`);
     }
+
+    await this.assertLessonUnlocked(userId, enrollment.course.id, lesson);
 
     const existing = await this.lessonProgressRepository.findOne({
       where: { enrollment: { id: dto.enrollmentId }, lesson: { id: dto.lessonId } },
@@ -65,22 +74,19 @@ export class LessonProgressService {
       completedAt: completed ? new Date() : null,
     });
 
-    // Se lee ANTES del recálculo: es el estado del que se parte para saber si
-    // el curso terminó recién ahora o ya estaba terminado.
-    const courseWasComplete = enrollment.progressPercent >= 100;
-
     const saved = await this.lessonProgressRepository.save(progress);
-    const percent = await this.recalculateEnrollmentProgress(enrollment.id);
+    await this.recalculateEnrollmentProgress(enrollment.id);
 
     if (completed) {
       this.publishLessonCompleted(
         enrollment.student.id,
         enrollment.course.id,
         lesson.id,
-        percent,
-        courseWasComplete,
       );
     }
+
+    // Esta lección puede haber sido la última que faltaba.
+    await this.settleCourseCompletion(enrollment.student.id, enrollment.course.id);
 
     return saved;
   }
@@ -112,7 +118,8 @@ export class LessonProgressService {
   async findOne(id: string): Promise<LessonProgress> {
     const progress = await this.lessonProgressRepository.findOne({
       where: { id },
-      relations: { enrollment: { student: true, course: true }, lesson: true },
+      // `lesson.module` lo necesita el gate de progresión al marcar completada.
+      relations: { enrollment: { student: true, course: true }, lesson: { module: true } },
     });
 
     if (!progress) {
@@ -144,6 +151,17 @@ export class LessonProgressService {
       throw new ForbiddenException('Esta inscripción no te pertenece');
     }
 
+    /* Sólo al MARCAR. Desmarcar una lección de un módulo que se volvió a
+       bloquear tiene que seguir siendo posible: si no, el alumno queda con un
+       registro que no puede deshacer. */
+    if (dto.completed === true) {
+      await this.assertLessonUnlocked(
+        userId,
+        progress.enrollment.course.id,
+        progress.lesson,
+      );
+    }
+
     const completed = dto.completed ?? progress.completed;
 
     /* Estado ANTERIOR, antes de pisarlo con Object.assign. Es lo que evita
@@ -151,7 +169,6 @@ export class LessonProgressService {
        otra vez: sin esto, cada PATCH repetido duplicaría todo lo que cuelgue
        del evento (racha, XP, logros, mails). */
     const wasCompleted = progress.completed;
-    const courseWasComplete = progress.enrollment.progressPercent >= 100;
 
     Object.assign(progress, {
       completed,
@@ -159,17 +176,22 @@ export class LessonProgressService {
     });
 
     const saved = await this.lessonProgressRepository.save(progress);
-    const percent = await this.recalculateEnrollmentProgress(progress.enrollment.id);
+    await this.recalculateEnrollmentProgress(progress.enrollment.id);
 
     if (completed && !wasCompleted) {
       this.publishLessonCompleted(
         progress.enrollment.student.id,
         progress.enrollment.course.id,
         progress.lesson.id,
-        percent,
-        courseWasComplete,
       );
     }
+
+    /* También al DESMARCAR: el curso deja de estar terminado y hay que
+       limpiar `completedAt`, o "Mis cursos" lo seguiría mostrando completo. */
+    await this.settleCourseCompletion(
+      progress.enrollment.student.id,
+      progress.enrollment.course.id,
+    );
 
     return saved;
   }
@@ -178,11 +200,30 @@ export class LessonProgressService {
     const progress = await this.findOne(id);
     this.assertOwnerOrAdmin(progress, user);
 
-    // Se guarda el id ANTES de borrar: remove() deja la entidad sin id.
+    // Se guardan ANTES de borrar: remove() deja la entidad sin id.
     const enrollmentId = progress.enrollment.id;
+    const studentId = progress.enrollment.student.id;
+    const courseId = progress.enrollment.course.id;
 
     await this.lessonProgressRepository.remove(progress);
     await this.recalculateEnrollmentProgress(enrollmentId);
+    await this.settleCourseCompletion(studentId, courseId);
+  }
+
+  /**
+   * Un fallo acá no puede tumbar la escritura de progreso, que ya está
+   * guardada: se loguea y sigue. Como mucho el curso queda sin marcar como
+   * terminado hasta la próxima lección que toque.
+   */
+  private async settleCourseCompletion(userId: string, courseId: string): Promise<void> {
+    try {
+      await this.progression.settleCourseCompletion(userId, courseId);
+    } catch (error) {
+      this.logger.error(
+        `No se pudo resolver si ${userId} terminó el curso ${courseId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   /**
@@ -218,22 +259,11 @@ export class LessonProgressService {
     userId: string,
     courseId: string,
     lessonId: string,
-    percent: number,
-    courseWasComplete: boolean,
   ): void {
     this.eventEmitter.emit(
       EVENTS.LESSON_COMPLETED,
       new LessonCompletedEvent(userId, lessonId, courseId),
     );
-
-    // Solo en la transición a 100%: si el curso ya estaba terminado, completar
-    // una lección más (o una lección nueva del docente) no vuelve a "terminarlo".
-    if (percent >= 100 && !courseWasComplete) {
-      this.eventEmitter.emit(
-        EVENTS.COURSE_COMPLETED,
-        new CourseCompletedEvent(userId, courseId),
-      );
-    }
   }
 
   private async recalculateEnrollmentProgress(enrollmentId: string): Promise<number> {
@@ -269,12 +299,10 @@ export class LessonProgressService {
 
     await this.enrollmentsRepository.update(
       { id: enrollmentId },
-      {
-        progressPercent: percent,
-        // Se limpia si vuelve a bajar de 100 (una lección desmarcada, o una
-        // lección nueva agregada al curso): el curso deja de estar terminado.
-        completedAt: percent >= 100 ? new Date() : null,
-      },
+      // `completedAt` NO se toca acá: un curso terminado son las lecciones al
+      // 100% **y** los checkpoints aprobados, y de eso decide un solo dueño
+      // (CourseProgressionService.settleCourseCompletion).
+      { progressPercent: percent },
     );
 
     // Se devuelve para que quien llamó sepa si se llegó al 100% sin volver a
@@ -293,6 +321,35 @@ export class LessonProgressService {
     if (user?.role === UserRole.ADMIN) return;
     if (progress.enrollment?.student?.id !== user?.id) {
       throw new ForbiddenException('Este registro de progreso no te pertenece');
+    }
+  }
+
+  /**
+   * No se puede reportar progreso sobre un módulo al que todavía no se llegó.
+   *
+   * Sin esto, el alumno marcaba como completadas las lecciones de módulos
+   * bloqueados —alcanzaba con el id de la lección— y llegaba al checkpoint de
+   * ese módulo sin haber leído nada: justo lo que la progresión existe para
+   * impedir. El gate de GET /lessons/:id no alcanzaba, porque escribir
+   * progreso no pasa por ahí.
+   */
+  private async assertLessonUnlocked(
+    userId: string,
+    courseId: string,
+    lesson: Lesson,
+  ): Promise<void> {
+    const unlocked = await this.progression.canOpenLesson(
+      // El rol no viaja en este endpoint; da igual, porque el docente y el
+      // admin no registran progreso sobre sus propios cursos.
+      { id: userId },
+      courseId,
+      lesson.module?.id,
+    );
+
+    if (!unlocked) {
+      throw new ForbiddenException(
+        'Todavía no llegaste a este módulo: terminá el anterior y aprobá su checkpoint',
+      );
     }
   }
 }

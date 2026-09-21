@@ -72,7 +72,9 @@ export class CoursesController {
   @Public()
   @ApiOperation({
     summary: 'Obtener todos los cursos',
-    description: 'Cada curso incluye ratingAverage (null sin reseñas), reviewsCount y studentsCount.',
+    description:
+      'Cada curso incluye ratingAverage (null sin reseñas), reviewsCount, studentsCount, ' +
+      'lessonsCount y totalDurationMinutes (el listado no trae el temario).',
   })
   @ApiQuery({
     name: 'includeInactive',
@@ -87,7 +89,10 @@ export class CoursesController {
 
   @Get(':id')
   @Public()
-  @ApiOperation({ summary: 'Obtener un curso por ID (con ratingAverage, reviewsCount y studentsCount)' })
+  @ApiOperation({
+    summary:
+      'Obtener un curso por ID (con ratingAverage, reviewsCount, studentsCount, lessonsCount y totalDurationMinutes)',
+  })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   async findOne(@Param('id') id: string) {
     const [course] = await this.courseStatsService.withStats([
