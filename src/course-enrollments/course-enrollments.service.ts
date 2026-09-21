@@ -5,17 +5,22 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Logger
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { CourseEnrollment } from './entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateCourseEnrollmentDto } from './dto/create-course-enrollment.dto';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
-
+import { MailService } from '../mail/mail.service';
+import { enrollmentEmail } from '../mail/templates/enrollment.template';
 @Injectable()
 export class CourseEnrollmentsService {
+  private readonly logger = new Logger(CourseEnrollmentsService.name); 
+
   constructor(
     @InjectRepository(CourseEnrollment)
     private readonly enrollmentsRepository: Repository<CourseEnrollment>,
@@ -24,6 +29,8 @@ export class CourseEnrollmentsService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly mail: MailService,
+    private readonly config: ConfigService, 
   ) { }
 
   /**
@@ -94,6 +101,13 @@ export class CourseEnrollmentsService {
       existing.isActive = true;
       return this.enrollmentsRepository.save(existing);
     }
+
+    this.sendEnrollmentMail(student, course).catch((err) =>
+      this.logger.error(
+        `Error enviando mail de inscripción a ${student.email}`,
+        err,
+      ),
+    );
 
     const enrollment = this.enrollmentsRepository.create({ student, course });
     return this.enrollmentsRepository.save(enrollment);
@@ -179,6 +193,22 @@ export class CourseEnrollmentsService {
     this.assertOwnerOrAdmin(enrollment, user);
     enrollment.isActive = true;
     return this.enrollmentsRepository.save(enrollment);
+  }
+
+  private async sendEnrollmentMail(student: User, course: Course): Promise<void> {
+    const frontendUrl = this.config.getOrThrow<string>('FRONTEND_URL');
+    const courseUrl = `${frontendUrl}/courses/${course.id}`;
+
+    await this.mail.send(
+      student.email,
+      `¡Te inscribiste a ${course.title}! 🎉`,
+      enrollmentEmail({
+        studentName: student.name,
+        courseName: course.title,
+        courseUrl,
+        instructorName: course.instructor?.name,
+      }),
+    );
   }
 
   /**

@@ -6,10 +6,11 @@ import { CourseEnrollment } from './entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User } from '../users/entities/user.entity';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { MailModule } from '../mail/mail.module'; 
 
 @Module({
   // SubscriptionsModule: un suscriptor Premium puede inscribirse a cursos pagos.
-  imports: [TypeOrmModule.forFeature([CourseEnrollment, Course, User]), SubscriptionsModule],
+  imports: [TypeOrmModule.forFeature([CourseEnrollment, Course, User]), SubscriptionsModule, MailModule],
   controllers: [CourseEnrollmentsController],
   providers: [CourseEnrollmentsService],
   exports: [CourseEnrollmentsService],
