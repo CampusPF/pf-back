@@ -79,6 +79,14 @@ function makeService() {
     };
     const dataSource = { transaction: jest.fn(async (cb) => cb(manager)) };
     const eventEmitter = { emit: jest.fn() };
+    /* La progresión tiene sus propios tests: acá sólo interesa que el service
+       la consulte. Por defecto deja pasar; un test la hace tirar para
+       comprobar que el error sube tal cual. */
+    const progression = {
+        assertCanOpen: jest.fn(async () => undefined),
+        assertCanSubmit: jest.fn(async () => undefined),
+        attemptsFor: jest.fn(async () => ({ maxAttempts: 2, attemptsLeft: 2, passed: false })),
+    };
 
     const service = new QuizzesService(
         quizzesRepository as never,
@@ -90,6 +98,7 @@ function makeService() {
         enrollmentsRepository as never,
         dataSource as never,
         eventEmitter as never,
+        progression as never,
     );
 
     return {
@@ -102,6 +111,7 @@ function makeService() {
         manager,
         dataSource,
         eventEmitter,
+        progression,
     };
 }
 
@@ -134,6 +144,10 @@ describe('QuizzesService.findForStudent', () => {
             moduleOrder: 2,
             title: QUIZ.title,
             passingScore: 70,
+            maxAttempts: 2,
+            attemptsLeft: 2,
+            passed: false,
+            canAttempt: true,
             questions: [
                 { id: 'q1', text: '¿Pregunta 1?', options: [{ id: 'q1-a', text: 'A1' }, { id: 'q1-b', text: 'B1' }] },
                 { id: 'q2', text: '¿Pregunta 2?', options: [{ id: 'q2-a', text: 'A2' }, { id: 'q2-b', text: 'B2' }] },
@@ -194,7 +208,7 @@ describe('QuizzesService.submitAttempt', () => {
         const { service, attemptsRepository } = makeService();
 
         await expect(
-            service.submitAttempt(QUIZ.id, STUDENT.id, {
+            service.submitAttempt(QUIZ.id, STUDENT, {
                 answers: [{ questionId: 'q1', optionId: 'option-de-otro-quiz' }],
             }),
         ).rejects.toBeInstanceOf(BadRequestException);
@@ -205,7 +219,7 @@ describe('QuizzesService.submitAttempt', () => {
         const { service } = makeService();
 
         await expect(
-            service.submitAttempt(QUIZ.id, STUDENT.id, {
+            service.submitAttempt(QUIZ.id, STUDENT, {
                 answers: [{ questionId: 'q1', optionId: 'q2-b' }],
             }),
         ).rejects.toBeInstanceOf(BadRequestException);
@@ -215,7 +229,7 @@ describe('QuizzesService.submitAttempt', () => {
         const { service } = makeService();
 
         await expect(
-            service.submitAttempt(QUIZ.id, STUDENT.id, {
+            service.submitAttempt(QUIZ.id, STUDENT, {
                 answers: [{ questionId: 'otra-pregunta', optionId: 'q1-a' }],
             }),
         ).rejects.toBeInstanceOf(BadRequestException);
@@ -225,7 +239,7 @@ describe('QuizzesService.submitAttempt', () => {
         const { service } = makeService();
 
         await expect(
-            service.submitAttempt(QUIZ.id, STUDENT.id, {
+            service.submitAttempt(QUIZ.id, STUDENT, {
                 answers: [
                     { questionId: 'q1', optionId: 'q1-a' },
                     { questionId: 'q1', optionId: 'q1-b' },
@@ -239,14 +253,14 @@ describe('QuizzesService.submitAttempt', () => {
         enrollmentsRepository.exists.mockResolvedValueOnce(false);
 
         await expect(
-            service.submitAttempt(QUIZ.id, STUDENT.id, { answers: ALL_CORRECT }),
+            service.submitAttempt(QUIZ.id, STUDENT, { answers: ALL_CORRECT }),
         ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('todo bien → aprueba, revela la correcta, guarda y emite QUIZ_PASSED', async () => {
         const { service, attemptsRepository, eventEmitter } = makeService();
 
-        const result = await service.submitAttempt(QUIZ.id, STUDENT.id, { answers: ALL_CORRECT });
+        const result = await service.submitAttempt(QUIZ.id, STUDENT, { answers: ALL_CORRECT });
 
         expect(result).toMatchObject({
             score: 100,
@@ -275,7 +289,7 @@ describe('QuizzesService.submitAttempt', () => {
         const { service, attemptsRepository, eventEmitter } = makeService();
 
         // q1 bien, q2 mal, q3 sin responder: 1 de 3 = 33.
-        const result = await service.submitAttempt(QUIZ.id, STUDENT.id, {
+        const result = await service.submitAttempt(QUIZ.id, STUDENT, {
             answers: [
                 { questionId: 'q1', optionId: 'q1-a' },
                 { questionId: 'q2', optionId: 'q2-a' },
@@ -300,7 +314,7 @@ describe('QuizzesService.submitAttempt', () => {
 
     it('redondea el score (2 de 3 → 67)', async () => {
         const { service } = makeService();
-        const result = await service.submitAttempt(QUIZ.id, STUDENT.id, {
+        const result = await service.submitAttempt(QUIZ.id, STUDENT, {
             answers: ALL_CORRECT.slice(0, 2),
         });
         expect(result.score).toBe(67);
@@ -369,8 +383,20 @@ describe('QuizzesService.findCourseCheckpoints', () => {
         attemptsRepository.find.mockResolvedValueOnce([{ quizId: QUIZ.id }]);
 
         await expect(service.findCourseCheckpoints(COURSE.id, STUDENT.id)).resolves.toEqual([
-            { quizId: QUIZ.id, moduleId: 'module-1', moduleOrder: 2, passed: true },
-            { quizId: 'quiz-final', moduleId: null, moduleOrder: null, passed: false },
+            {
+                quizId: QUIZ.id,
+                moduleId: 'module-1',
+                moduleOrder: 2,
+                title: QUIZ.title,
+                passed: true,
+            },
+            {
+                quizId: 'quiz-final',
+                moduleId: null,
+                moduleOrder: null,
+                title: finalQuiz.title,
+                passed: false,
+            },
         ]);
         expect(attemptsRepository.find).toHaveBeenCalledWith(
             expect.objectContaining({

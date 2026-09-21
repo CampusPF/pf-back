@@ -19,12 +19,19 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/entities/user.entity';
+import { CourseProgressionService } from '../course-progression/course-progression.service';
 
 /** Lección con el flag de acceso; content/videoUrl van null si no hay acceso. */
 type LessonView = Omit<Lesson, 'content' | 'videoUrl'> & {
   hasAccess: boolean;
   content: string | null;
   videoUrl: string | null;
+  /**
+   * El módulo todavía no se desbloqueó en la progresión del curso. Es distinto
+   * de `hasAccess:false` (que es no haber pagado/inscripto): acá el alumno SÍ
+   * tiene derecho al contenido, sólo que le falta terminar el módulo anterior.
+   */
+  isLockedByProgression: boolean;
 };
 
 /**
@@ -38,6 +45,7 @@ export class LessonsController {
   constructor(
     private readonly lessonsService: LessonsService,
     private readonly lessonsAccess: LessonsAccessService,
+    private readonly progression: CourseProgressionService,
   ) { }
 
   @Post()
@@ -97,12 +105,24 @@ export class LessonsController {
       lesson,
     );
 
+    /* Segundo gate, independiente del de acceso: aunque esté inscripto, no
+       puede abrir un módulo al que todavía no llegó. Se consulta sólo si ya
+       pasó el primero — al que no tiene acceso no hace falta decirle además
+       que le falta el módulo anterior. */
+    const courseId = lesson.module?.course?.id;
+    const unlocked =
+      !hasAccess ||
+      !courseId ||
+      (await this.progression.canOpenLesson(user, courseId, lesson.module?.id));
+
+    const serveContent = hasAccess && unlocked;
     const { content, videoUrl, ...rest } = lesson;
     return {
       ...rest,
       hasAccess,
-      content: hasAccess ? (content ?? null) : null,
-      videoUrl: hasAccess ? (videoUrl ?? null) : null,
+      isLockedByProgression: hasAccess && !unlocked,
+      content: serveContent ? (content ?? null) : null,
+      videoUrl: serveContent ? (videoUrl ?? null) : null,
     };
   }
 

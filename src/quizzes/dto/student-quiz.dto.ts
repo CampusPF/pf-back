@@ -52,10 +52,29 @@ export class StudentQuizDto {
     @ApiProperty({ example: 70 })
     passingScore: number;
 
+    @ApiProperty({ description: 'Cuántas veces se puede rendir en total' })
+    maxAttempts: number;
+
+    @ApiProperty({ description: 'Intentos que le quedan al alumno antes de agotarlo' })
+    attemptsLeft: number;
+
+    @ApiProperty({ description: 'Ya lo aprobó. Puede verlo, pero no volver a rendirlo.' })
+    passed: boolean;
+
+    @ApiProperty({
+        description:
+            'Puede rendirlo ahora. false si ya lo aprobó o si agotó los intentos: la UI no debe ofrecer empezar.',
+    })
+    canAttempt: boolean;
+
     @ApiProperty({ type: [StudentQuizQuestionDto] })
     questions: StudentQuizQuestionDto[];
 
-    static from(quiz: Quiz, questions: QuestionWithOptions[]): StudentQuizDto {
+    static from(
+        quiz: Quiz,
+        questions: QuestionWithOptions[],
+        attempts: { maxAttempts: number; attemptsLeft: number; passed: boolean },
+    ): StudentQuizDto {
         return {
             id: quiz.id,
             courseId: quiz.courseId,
@@ -63,6 +82,12 @@ export class StudentQuizDto {
             moduleOrder: quiz.module?.order ?? null,
             title: quiz.title,
             passingScore: quiz.passingScore,
+            maxAttempts: attempts.maxAttempts,
+            attemptsLeft: attempts.attemptsLeft,
+            passed: attempts.passed,
+            // Aprobado es estado final: no se vuelve a rendir aunque sobren
+            // intentos. Y sin intentos tampoco, hasta que el docente habilite.
+            canAttempt: !attempts.passed && attempts.attemptsLeft > 0,
             questions: questions.map((question) => ({
                 id: question.id,
                 text: question.text,

@@ -14,6 +14,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { UserRole } from '../users/entities/user.entity';
 import { CreateLessonProgressDto } from './dto/create-lesson-progress.dto';
 import { UpdateLessonProgressDto } from './dto/update-lesson-progress.dto';
+import { CourseProgressionService } from '../course-progression/course-progression.service';
 
 @Injectable()
 export class LessonProgressService {
@@ -25,6 +26,7 @@ export class LessonProgressService {
     @InjectRepository(Lesson)
     private readonly lessonsRepository: Repository<Lesson>,
     private readonly eventEmitter: EventEmitter2,
+    private readonly progression: CourseProgressionService,
   ) { }
 
   async create(dto: CreateLessonProgressDto, userId: string): Promise<LessonProgress> {
@@ -44,10 +46,14 @@ export class LessonProgressService {
 
     const lesson = await this.lessonsRepository.findOne({
       where: { id: dto.lessonId },
+      // El módulo hace falta para el gate de progresión de abajo.
+      relations: { module: true },
     });
     if (!lesson) {
       throw new NotFoundException(`Lección con id ${dto.lessonId} no encontrada`);
     }
+
+    await this.assertLessonUnlocked(userId, enrollment.course.id, lesson);
 
     const existing = await this.lessonProgressRepository.findOne({
       where: { enrollment: { id: dto.enrollmentId }, lesson: { id: dto.lessonId } },
@@ -112,7 +118,8 @@ export class LessonProgressService {
   async findOne(id: string): Promise<LessonProgress> {
     const progress = await this.lessonProgressRepository.findOne({
       where: { id },
-      relations: { enrollment: { student: true, course: true }, lesson: true },
+      // `lesson.module` lo necesita el gate de progresión al marcar completada.
+      relations: { enrollment: { student: true, course: true }, lesson: { module: true } },
     });
 
     if (!progress) {
@@ -142,6 +149,17 @@ export class LessonProgressService {
     // el alumno: no hay caso de negocio para eso.
     if (progress.enrollment.student.id !== userId) {
       throw new ForbiddenException('Esta inscripción no te pertenece');
+    }
+
+    /* Sólo al MARCAR. Desmarcar una lección de un módulo que se volvió a
+       bloquear tiene que seguir siendo posible: si no, el alumno queda con un
+       registro que no puede deshacer. */
+    if (dto.completed === true) {
+      await this.assertLessonUnlocked(
+        userId,
+        progress.enrollment.course.id,
+        progress.lesson,
+      );
     }
 
     const completed = dto.completed ?? progress.completed;
@@ -293,6 +311,35 @@ export class LessonProgressService {
     if (user?.role === UserRole.ADMIN) return;
     if (progress.enrollment?.student?.id !== user?.id) {
       throw new ForbiddenException('Este registro de progreso no te pertenece');
+    }
+  }
+
+  /**
+   * No se puede reportar progreso sobre un módulo al que todavía no se llegó.
+   *
+   * Sin esto, el alumno marcaba como completadas las lecciones de módulos
+   * bloqueados —alcanzaba con el id de la lección— y llegaba al checkpoint de
+   * ese módulo sin haber leído nada: justo lo que la progresión existe para
+   * impedir. El gate de GET /lessons/:id no alcanzaba, porque escribir
+   * progreso no pasa por ahí.
+   */
+  private async assertLessonUnlocked(
+    userId: string,
+    courseId: string,
+    lesson: Lesson,
+  ): Promise<void> {
+    const unlocked = await this.progression.canOpenLesson(
+      // El rol no viaja en este endpoint; da igual, porque el docente y el
+      // admin no registran progreso sobre sus propios cursos.
+      { id: userId },
+      courseId,
+      lesson.module?.id,
+    );
+
+    if (!unlocked) {
+      throw new ForbiddenException(
+        'Todavía no llegaste a este módulo: terminá el anterior y aprobá su checkpoint',
+      );
     }
   }
 }

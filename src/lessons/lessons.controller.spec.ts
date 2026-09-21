@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { LessonsController } from './lessons.controller';
 import { LessonsService } from './lessons.service';
 import { LessonsAccessService } from './lessons-access.service';
+import { CourseProgressionService } from '../course-progression/course-progression.service';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
@@ -33,16 +34,19 @@ function lessonFixture(priceInCents: number) {
  */
 const STUDENT = { id: 'user-1', role: UserRole.STUDENT };
 
-function makeController(canAccess: boolean) {
+function makeController(canAccess: boolean, unlocked = true) {
     const findOne = jest.fn();
     const canAccessCourseContent = jest.fn(async () => canAccess);
+    // Segundo gate, independiente: la progresión secuencial del curso.
+    const canOpenLesson = jest.fn(async () => unlocked);
 
     const controller = new LessonsController(
         { findOne } as unknown as LessonsService,
         { canAccessCourseContent } as unknown as LessonsAccessService,
+        { canOpenLesson } as unknown as CourseProgressionService,
     );
 
-    return { controller, findOne, canAccessCourseContent };
+    return { controller, findOne, canAccessCourseContent, canOpenLesson };
 }
 
 describe('LessonsController.findOne (gate de contenido)', () => {
@@ -97,5 +101,40 @@ describe('LessonsController.findOne (gate de contenido)', () => {
         await expect(controller.findOne('nope', STUDENT)).rejects.toBeInstanceOf(
             NotFoundException,
         );
+    });
+
+    /* La progresión es un gate SEPARADO del de acceso: el alumno pagó y está
+       inscripto, pero todavía no llegó a este módulo. */
+    it('módulo bloqueado por progresión → sin contenido, pero hasAccess sigue en true', async () => {
+        const { controller, findOne } = makeController(true, false);
+        findOne.mockResolvedValueOnce(lessonFixture(4999));
+
+        const res = await controller.findOne('lesson-1', STUDENT);
+
+        expect(res.hasAccess).toBe(true);
+        expect(res.isLockedByProgression).toBe(true);
+        expect(res.content).toBeNull();
+        expect(res.videoUrl).toBeNull();
+        expect(res.title).toBe('Intro');
+    });
+
+    it('sin acceso no se consulta la progresión: ya está bloqueada por otra razón', async () => {
+        const { controller, findOne, canOpenLesson } = makeController(false);
+        findOne.mockResolvedValueOnce(lessonFixture(4999));
+
+        const res = await controller.findOne('lesson-1', STUDENT);
+
+        expect(canOpenLesson).not.toHaveBeenCalled();
+        expect(res.isLockedByProgression).toBe(false);
+    });
+
+    it('con acceso y módulo abierto → isLockedByProgression:false', async () => {
+        const { controller, findOne } = makeController(true, true);
+        findOne.mockResolvedValueOnce(lessonFixture(0));
+
+        const res = await controller.findOne('lesson-1', STUDENT);
+
+        expect(res.isLockedByProgression).toBe(false);
+        expect(res.content).toBe('contenido real premium');
     });
 });

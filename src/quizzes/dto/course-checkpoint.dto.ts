@@ -11,6 +11,13 @@ export class CourseCheckpointDto {
     @ApiProperty({ nullable: true, type: Number })
     moduleOrder: number | null;
 
+    /* El título que le puso el docente. Es lo que el front muestra en el
+       temario y en el aviso de "te falta aprobar X": sin esto, un checkpoint
+       de fin de curso ("Examen final") no se puede distinguir de uno de
+       módulo, porque `moduleOrder` viene null en ese caso. */
+    @ApiProperty({ example: 'Checkpoint del módulo 1' })
+    title: string;
+
     @ApiProperty()
     passed: boolean;
 }

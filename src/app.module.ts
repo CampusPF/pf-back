@@ -30,6 +30,7 @@ import { FileUploadModule } from './file-upload/file-upload.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
+import { CourseProgressionModule } from './course-progression/course-progression.module';
 import { AchievementsModule } from './achievements/achievements.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { CategoriesService } from './categories/categories.service';
@@ -113,6 +114,8 @@ import { CategoriesService } from './categories/categories.service';
     // Por ahora solo registran entidades (sin services ni endpoints).
     NotificationsModule,
     QuizzesModule,
+    // Progresión secuencial: qué módulo/checkpoint tiene abierto cada alumno.
+    CourseProgressionModule,
     // Gamificación: XP/niveles y logros, ambos movidos por el bus de eventos.
     GamificationModule,
     AchievementsModule,

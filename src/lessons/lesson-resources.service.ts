@@ -14,6 +14,7 @@ import {
 } from '../file-upload/cloudinary.service';
 import { assertMagicBytes } from '../file-upload/file-validation';
 import { Actor, assertCourseOwner } from '../common/utils/assert-course-owner.util';
+import { CourseProgressionService } from '../course-progression/course-progression.service';
 
 /**
  * Vencimiento de la URL firmada. Corto a propósito: alcanza para que el
@@ -30,6 +31,7 @@ export class LessonResourcesService {
         private readonly lessonsService: LessonsService,
         private readonly lessonsAccess: LessonsAccessService,
         private readonly cloudinary: CloudinaryService,
+        private readonly progression: CourseProgressionService,
     ) { }
 
     /** Metadatos solamente: el listado nunca incluye una URL descargable. */
@@ -92,6 +94,19 @@ export class LessonResourcesService {
         if (!hasAccess) {
             throw new ForbiddenException(
                 'No tenés acceso al contenido de este curso.',
+            );
+        }
+
+        /* Segundo gate, igual que en GET /lessons/:id: tener acceso al curso
+           no alcanza si todavía no llegó a ese módulo. Sin esto se bajaban los
+           PDFs de módulos bloqueados con sólo conocer el id de la lección. */
+        const courseId = lesson.module?.course?.id;
+        if (
+            courseId &&
+            !(await this.progression.canOpenLesson(user, courseId, lesson.module?.id))
+        ) {
+            throw new ForbiddenException(
+                'Todavía no llegaste a este módulo: terminá el anterior y aprobá su checkpoint',
             );
         }
 

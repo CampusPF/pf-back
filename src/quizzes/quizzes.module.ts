@@ -9,6 +9,7 @@ import { CourseModule as CourseModuleEntity } from '../course-modules/entities/c
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
 import { QuizzesService } from './quizzes.service';
 import { QuizzesController } from './quizzes.controller';
+import { CourseProgressionModule } from '../course-progression/course-progression.module';
 
 /**
  * Checkpoints: quizzes por módulo o de fin de curso.
@@ -27,6 +28,8 @@ import { QuizzesController } from './quizzes.controller';
             CourseModuleEntity,
             CourseEnrollment,
         ]),
+        // La progresión decide si el alumno llegó hasta este checkpoint.
+        CourseProgressionModule,
     ],
     controllers: [QuizzesController],
     providers: [QuizzesService],

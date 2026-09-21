@@ -3,7 +3,8 @@ import PDFDocument = require('pdfkit');
 export interface CertificateData {
     studentName: string;
     courseName: string;
-    hours: number;
+    /** Minutos de contenido del curso. Se formatean acá, no antes. */
+    minutes: number;
     /** Ya formateada, ej "17 de septiembre de 2026". */
     date: string;
     code: string;
@@ -26,12 +27,33 @@ export interface CertificateData {
  * stream y no queda ningún proceso colgado entre una emisión y otra.
  */
 /**
- * Línea de horas y fecha. Un curso sin duración cargada (0 horas) no dice
- * "0 horas de contenido": en un certificado queda mal y no informa nada.
+ * Duración del curso en texto, a partir de los MINUTOS reales.
+ *
+ * Antes esto recibía horas ya redondeadas hacia arriba, y por eso un curso de
+ * 83 minutos y otro de 115 decían los dos "2 horas": todo lo que va entre 61 y
+ * 120 colapsa en el mismo número. Se muestran horas Y minutos para que la cifra
+ * sea la real y dos cursos distintos no se lean igual.
  */
-export function certificateSubtitle(hours: number, date: string): string {
-    if (hours <= 0) return `Emitido el ${date}`;
-    return `${hours} ${hours === 1 ? 'hora' : 'horas'} de contenido · Emitido el ${date}`;
+export function formatCourseDuration(minutes: number): string {
+    const total = Math.max(0, Math.round(minutes));
+    const hours = Math.floor(total / 60);
+    const rest = total % 60;
+
+    // "1 hs" quedaría mal, así que la unidad va en singular cuando es una sola.
+    const hoursLabel = `${hours} ${hours === 1 ? 'h' : 'hs'}`;
+
+    if (hours === 0) return `${rest} min`;
+    if (rest === 0) return hoursLabel;
+    return `${hoursLabel} y ${rest} min`;
+}
+
+/**
+ * Línea de duración y fecha. Un curso sin duración cargada (0 minutos) no dice
+ * "0 min de contenido": en un certificado queda mal y no informa nada.
+ */
+export function certificateSubtitle(minutes: number, date: string): string {
+    if (minutes <= 0) return `Emitido el ${date}`;
+    return `${formatCourseDuration(minutes)} de contenido · Emitido el ${date}`;
 }
 
 export function generateCertificatePdf(data: CertificateData): Promise<Buffer> {
@@ -89,7 +111,7 @@ export function generateCertificatePdf(data: CertificateData): Promise<Buffer> {
             .fontSize(12)
             .font('Helvetica')
             .fillColor('#333333')
-            .text(certificateSubtitle(data.hours, data.date), {
+            .text(certificateSubtitle(data.minutes, data.date), {
                 align: 'center',
             });
 
@@ -101,20 +123,29 @@ export function generateCertificatePdf(data: CertificateData): Promise<Buffer> {
         const qrY = doc.y + 10;
         doc.image(data.qrBuffer, pageWidth / 2 - qrSize / 2, qrY, { width: qrSize });
 
+        /* `width: pageWidth` no es decorativo. Al pasar x=0, pdfkit calcula el
+           ancho como `pageWidth - x - margenDerecho`, así que 'center' centraba
+           en una caja 50pt más angosta por la derecha: el texto quedaba 25pt a
+           la izquierda del QR, que sí está en el centro real de la página.
+           Fijando el ancho a la página entera, ambos comparten el mismo eje. */
+        const centered = { align: 'center' as const, width: pageWidth };
+
         doc
             .fontSize(9)
+            .font('Helvetica')
             .fillColor('#555555')
-            .text('Escaneá el código para verificar este certificado', 0, qrY + qrSize + 8, {
-                align: 'center',
-            });
+            .text(
+                'Escaneá el código para verificar este certificado',
+                0,
+                qrY + qrSize + 8,
+                centered,
+            );
 
         doc
             .fontSize(10)
             .font('Helvetica-Bold')
             .fillColor('#1e3a5f')
-            .text(`Código de verificación: ${data.code}`, 0, qrY + qrSize + 22, {
-                align: 'center',
-            });
+            .text(`Código de verificación: ${data.code}`, 0, qrY + qrSize + 22, centered);
 
         doc.end();
     });

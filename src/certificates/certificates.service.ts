@@ -24,7 +24,8 @@ export interface PublicVerification {
     valido: boolean;
     nombreAlumno?: string;
     curso?: string;
-    horas?: number;
+    /** Minutos de contenido; el front decide cómo escribirlos. */
+    minutos?: number;
     fechaEmision?: Date;
 }
 
@@ -111,7 +112,7 @@ export class CertificatesService {
         const pdfBuffer = await generateCertificatePdf({
             studentName: enrollment.student.name,
             courseName: enrollment.course.title,
-            hours: await this.courseHours(courseId),
+            minutes: await this.courseMinutes(courseId),
             date: this.formatDate(new Date()),
             code,
             qrBuffer,
@@ -161,7 +162,7 @@ export class CertificatesService {
     /**
      * Verificación PÚBLICA por código.
      *
-     * Devuelve sólo lo que puede ver cualquiera: nombre, curso, horas y fecha.
+     * Devuelve sólo lo que puede ver cualquiera: nombre, curso, duración y fecha.
      * Nada de ids internos, ni el mail del alumno, ni la URL del PDF.
      *
      * Un código inexistente devuelve `{ valido: false }` con 200, no un 404:
@@ -181,17 +182,21 @@ export class CertificatesService {
             valido: true,
             nombreAlumno: certificate.user.name,
             curso: certificate.course.title,
-            horas: await this.courseHours(certificate.courseId),
+            minutos: await this.courseMinutes(certificate.courseId),
             fechaEmision: certificate.issuedAt,
         };
     }
 
     /**
-     * Horas de contenido del curso: la suma de la duración de sus lecciones
-     * vivas, redondeada hacia arriba. Un curso con contenido siempre muestra
-     * al menos 1 hora — "0 horas de contenido" en un certificado queda mal.
+     * MINUTOS de contenido del curso: la suma de la duración de sus lecciones
+     * vivas.
+     *
+     * Antes devolvía horas con `Math.ceil`, y eso hacía que cursos claramente
+     * distintos dijeran lo mismo: 83 min y 115 min daban los dos "2 horas".
+     * El redondeo ahora no existe — el minuto crudo viaja hasta el formateador,
+     * que decide cómo escribirlo (ver formatCourseDuration).
      */
-    private async courseHours(courseId: string): Promise<number> {
+    private async courseMinutes(courseId: string): Promise<number> {
         const row = await this.lessonsRepository
             .createQueryBuilder('lesson')
             .innerJoin('lesson.module', 'module')
@@ -201,8 +206,7 @@ export class CertificatesService {
             .select('COALESCE(SUM(lesson.durationMinutes), 0)', 'total')
             .getRawOne<{ total: string }>();
 
-        const minutes = Number(row?.total ?? 0);
-        return minutes > 0 ? Math.max(1, Math.ceil(minutes / 60)) : 0;
+        return Number(row?.total ?? 0);
     }
 
     /**
