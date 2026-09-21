@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, CreateDateColumn, Unique } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, CreateDateColumn, Unique, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Course } from '../../courses/entities/course.entity';
 import { LessonProgress } from '../../lesson-progress/entities/lesson-progress.entity';
@@ -30,6 +30,14 @@ export class CourseEnrollment {
        ser null y la base decía lo contrario. */
     @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
     completedAt: Date | null;
+
+    /* Última vez que el alumno abrió una lección del curso (GET /lessons/:id
+       con acceso). Null = nunca entró desde que se agregó la columna; el
+       recordatorio de inactividad usa `enrolledAt` en ese caso. Ver
+       CourseEnrollmentsService.touchAccess. */
+    @Index('IDX_course_enrollments_last_accessed_at')
+    @Column({ name: 'last_accessed_at', type: 'timestamptz', nullable: true })
+    lastAccessedAt: Date | null;
 
     @OneToMany(() => LessonProgress, (progress) => progress.enrollment)
     lessonProgress: LessonProgress[];

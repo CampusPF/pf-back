@@ -117,6 +117,7 @@ function makeService() {
         coursesRepo as any,
         enrollmentsService,
         subscriptionsService,
+        { emit: jest.fn() } as any,
     );
 
     return {

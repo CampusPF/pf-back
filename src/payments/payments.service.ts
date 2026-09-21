@@ -37,12 +37,14 @@ export interface TeacherPaymentRow {
     date: Date;
 }
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import Stripe from 'stripe';
 import { Payment, PaymentStatus, PaymentType } from './entities/payment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { StripeService } from './stripe.service';
+import { EVENTS, PaymentSucceededEvent } from '../events';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
 import {
@@ -70,6 +72,7 @@ export class PaymentsService {
         private readonly coursesRepository: Repository<Course>,
         private readonly enrollmentsService: CourseEnrollmentsService,
         private readonly subscriptionsService: SubscriptionsService,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
     /**
@@ -374,6 +377,13 @@ export class PaymentsService {
 
         payment.status = PaymentStatus.SUCCEEDED;
         await this.paymentsRepository.save(payment);
+
+        // Comprobante de compra / confirmación de Premium por mail. Después
+        // del save: sólo se avisa un pago que quedó efectivamente registrado.
+        this.eventEmitter.emit(
+            EVENTS.PAYMENT_SUCCEEDED,
+            new PaymentSucceededEvent(payment.id),
+        );
     }
 
     private async grantCourseAccess(payment: Payment): Promise<void> {

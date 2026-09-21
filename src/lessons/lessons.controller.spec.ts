@@ -3,6 +3,7 @@ import { LessonsController } from './lessons.controller';
 import { LessonsService } from './lessons.service';
 import { LessonsAccessService } from './lessons-access.service';
 import { CourseProgressionService } from '../course-progression/course-progression.service';
+import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
@@ -39,14 +40,16 @@ function makeController(canAccess: boolean, unlocked = true) {
     const canAccessCourseContent = jest.fn(async () => canAccess);
     // Segundo gate, independiente: la progresión secuencial del curso.
     const canOpenLesson = jest.fn(async () => unlocked);
+    const touchAccess = jest.fn(async () => undefined);
 
     const controller = new LessonsController(
         { findOne } as unknown as LessonsService,
         { canAccessCourseContent } as unknown as LessonsAccessService,
         { canOpenLesson } as unknown as CourseProgressionService,
+        { touchAccess } as unknown as CourseEnrollmentsService,
     );
 
-    return { controller, findOne, canAccessCourseContent, canOpenLesson };
+    return { controller, findOne, canAccessCourseContent, canOpenLesson, touchAccess };
 }
 
 describe('LessonsController.findOne (gate de contenido)', () => {
@@ -94,6 +97,27 @@ describe('LessonsController.findOne (gate de contenido)', () => {
         );
     });
 
+    it('alumno con acceso → registra el acceso al curso (recordatorio de inactividad)', async () => {
+        const { controller, findOne, touchAccess } = makeController(true);
+        findOne.mockResolvedValueOnce(lessonFixture(0));
+
+        await controller.findOne('lesson-1', STUDENT);
+
+        expect(touchAccess).toHaveBeenCalledWith('user-1', 'course-1');
+    });
+
+    it('sin acceso, o si no es alumno → no registra acceso', async () => {
+        const denied = makeController(false);
+        denied.findOne.mockResolvedValueOnce(lessonFixture(4999));
+        await denied.controller.findOne('lesson-1', STUDENT);
+        expect(denied.touchAccess).not.toHaveBeenCalled();
+
+        const admin = makeController(true);
+        admin.findOne.mockResolvedValueOnce(lessonFixture(0));
+        await admin.controller.findOne('lesson-1', { id: 'adm', role: UserRole.ADMIN });
+        expect(admin.touchAccess).not.toHaveBeenCalled();
+    });
+
     it('propaga el 404 de la lección inexistente', async () => {
         const { controller, findOne } = makeController(true);
         findOne.mockRejectedValueOnce(new NotFoundException());
@@ -126,6 +150,20 @@ describe('LessonsController.findOne (gate de contenido)', () => {
 
         expect(canOpenLesson).not.toHaveBeenCalled();
         expect(res.isLockedByProgression).toBe(false);
+    });
+
+    /* Los dos gates conviven: abrir una lección que todavía no le toca no
+       muestra contenido, pero SIGUE siendo actividad en el curso — que es lo
+       único que le importa al recordatorio de inactividad. */
+    it('módulo bloqueado → sin contenido, pero el acceso al curso igual se registra', async () => {
+        const { controller, findOne, touchAccess } = makeController(true, false);
+        findOne.mockResolvedValueOnce(lessonFixture(0));
+
+        const res = await controller.findOne('lesson-1', STUDENT);
+
+        expect(res.isLockedByProgression).toBe(true);
+        expect(res.content).toBeNull();
+        expect(touchAccess).toHaveBeenCalledWith('user-1', 'course-1');
     });
 
     it('con acceso y módulo abierto → isLockedByProgression:false', async () => {
