@@ -28,4 +28,5 @@ export const SAMPLES: Record<MailTemplate, Record<string, unknown>> = {
     },
     [MailTemplate.TEACHER_NEW_STUDENT]: { teacherName: 'Luis', studentName: 'Ana', courseTitle: 'Python desde cero', totalStudents: 12, courseAdminUrl: 'https://campus.test/admin/1' },
     [MailTemplate.TEACHER_REMINDER]: { name: 'Luis', daysSinceLastCourse: 30, hasCourses: true, createCourseUrl: 'https://campus.test/nuevo', unsubscribeUrl: 'https://api.test/unsubscribe?token=t' },
+    [MailTemplate.ROLE_CHANGED]: { name: 'Ana', previousRole: 'estudiante', newRole: 'docente', dashboardUrl: 'https://campus.test/dashboard',},
 };
