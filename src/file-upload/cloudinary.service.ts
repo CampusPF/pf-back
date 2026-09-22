@@ -171,6 +171,10 @@ export class CloudinaryService {
             resource_type: 'raw',
             public_id: publicId.endsWith('.pdf') ? publicId : `${publicId}.pdf`,
             overwrite: true,
+            // Al regenerar un certificado (curso renombrado) se sobrescribe el
+            // mismo archivo: sin esto, el CDN seguiría sirviendo la copia vieja
+            // a quien abra una URL anterior (la del mail, por ejemplo).
+            invalidate: true,
         });
 
         return { publicId: result.public_id, url: result.secure_url };

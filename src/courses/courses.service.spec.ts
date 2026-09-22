@@ -1,13 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CoursesService } from './courses.service';
 import { Course } from './entities/course.entity';
 import { Category } from '../categories/entities/category.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
+import { CloudinaryService } from '../file-upload/cloudinary.service';
+import { EVENTS } from '../events';
 
 /**
  * Repo de cursos falso en memoria. Sólo implementa lo que usa
- * CoursesService.create / findAll: create, save, countBy({ slug }), find.
+ * CoursesService.create / findAll / update: create, save, countBy({ slug }),
+ * find, findOne({ where: { id } }).
  */
 class FakeCourseRepo {
   private rows: Course[] = [];
@@ -17,8 +21,12 @@ class FakeCourseRepo {
   }
 
   async save(course: Course): Promise<Course> {
-    this.rows.push(course);
+    if (!this.rows.includes(course)) this.rows.push(course);
     return course;
+  }
+
+  async findOne({ where: { id } }: { where: { id: string } }): Promise<Course | null> {
+    return this.rows.find((c) => c.id === id) ?? null;
   }
 
   async countBy({ slug }: { slug: string }): Promise<number> {
@@ -38,12 +46,14 @@ class FakeCourseRepo {
 describe('CoursesService (slug)', () => {
   let service: CoursesService;
   let courseRepo: FakeCourseRepo;
+  let eventEmitter: { emit: jest.Mock };
 
   const category = { id: 'cat-1', name: 'Programación' } as Category;
   const instructor = { id: 'user-1', name: 'Carlos' } as User;
 
   beforeEach(async () => {
     courseRepo = new FakeCourseRepo();
+    eventEmitter = { emit: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -57,6 +67,8 @@ describe('CoursesService (slug)', () => {
           provide: getRepositoryToken(User),
           useValue: { findOne: jest.fn().mockResolvedValue(instructor) },
         },
+        { provide: CloudinaryService, useValue: {} },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
 
@@ -105,5 +117,35 @@ describe('CoursesService (slug)', () => {
       instructor.id,
     );
     expect(course.slug).toBe('react-cool');
+  });
+
+  describe('update — certificados', () => {
+    const teacher = { id: instructor.id, role: UserRole.TEACHER };
+
+    async function createCourse() {
+      const course = await service.create({ ...baseDto } as any, instructor.id);
+      course.instructor = instructor;
+      return course;
+    }
+
+    it('renombrar el curso emite COURSE_RENAMED para regenerar los certificados', async () => {
+      const course = await createCourse();
+
+      await service.update(course.id, { title: 'React con Next.js' } as any, teacher);
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENTS.COURSE_RENAMED,
+        expect.objectContaining({ courseId: course.id }),
+      );
+    });
+
+    it('editar sin cambiar el título no emite nada', async () => {
+      const course = await createCourse();
+
+      await service.update(course.id, { title: baseDto.title, description: 'Otra' } as any, teacher);
+      await service.update(course.id, { description: 'Sin título' } as any, teacher);
+
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
   });
 });

@@ -6,6 +6,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { CertificatesService } from './certificates.service';
 import { CertificatesController } from './certificates.controller';
+import { CertificatesListener } from './certificates.listener';
 import { FileUploadModule } from '../file-upload/file-upload.module';
 import { QuizzesModule } from '../quizzes/quizzes.module';
 
@@ -23,7 +24,8 @@ import { QuizzesModule } from '../quizzes/quizzes.module';
         QuizzesModule,
     ],
     controllers: [CertificatesController],
-    providers: [CertificatesService],
+    // CertificatesListener: regenera los PDF cuando se renombra un curso.
+    providers: [CertificatesService, CertificatesListener],
     exports: [CertificatesService],
 })
 export class CertificatesModule { }
