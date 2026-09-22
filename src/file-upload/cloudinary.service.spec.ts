@@ -190,6 +190,9 @@ describe('CloudinaryService configurado', () => {
         expect(options.resource_type).toBe('raw');
         expect(options.public_id).toBe('CMP-ABC123.pdf');
         expect(options.folder).toBe('campus-lite/test/certificates');
+        // Sobrescribe el mismo archivo al regenerarlo y limpia la caché del CDN.
+        expect(options.overwrite).toBe(true);
+        expect(options.invalidate).toBe(true);
         // Público: sin type:'authenticated', la URL se abre sin firmar.
         expect(options.type).toBeUndefined();
         expect(result.url.endsWith('.pdf')).toBe(true);

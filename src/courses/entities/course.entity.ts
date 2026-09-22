@@ -52,6 +52,16 @@ export class Course {
     @Column({ default: true })
     isActive: boolean;
 
+    // true = la última desactivación la hizo un ADMIN (no el propio docente).
+    // Existe para una sola regla: si fue un admin quien lo bajó (por ejemplo,
+    // contenido inadecuado), el docente dueño no puede reactivarlo ni seguir
+    // editando su contenido por su cuenta — sólo un admin puede revertirlo.
+    // Se resetea a false en cada restore (ver CoursesService), así una
+    // próxima baja del propio docente no queda "contaminada" por el estado
+    // anterior. Ver assertCourseOwner / assertCanRestoreCourse.
+    @Column({ name: 'deactivated_by_admin', default: false })
+    deactivatedByAdmin: boolean;
+
     @ManyToOne(() => User, (user) => user.coursesCreated, { onDelete: 'CASCADE' })
     instructor: User;
 

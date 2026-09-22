@@ -1,21 +1,24 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Repository } from 'typeorm';
 import { Course } from './entities/course.entity';
 import { Category } from '../categories/entities/category.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { generateUniqueSlug } from './utils/slug.util';
 import {
   Actor,
   assertCanRemoveCourse,
+  assertCanRestoreCourse,
   assertCourseOwner,
 } from '../common/utils/assert-course-owner.util';
 import {
   CloudinaryService,
   UPLOAD_FOLDERS,
 } from '../file-upload/cloudinary.service';
+import { EVENTS, CourseRenamedEvent } from '../events';
 
 @Injectable()
 export class CoursesService {
@@ -27,6 +30,7 @@ export class CoursesService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly cloudinary: CloudinaryService,
+    private readonly eventEmitter: EventEmitter2,
   ) { }
 
   async create(dto: CreateCourseDto, instructorId: string): Promise<Course> {
@@ -119,6 +123,8 @@ export class CoursesService {
       );
     }
 
+    const renamed = dto.title !== undefined && dto.title !== course.title;
+
     Object.assign(course, {
       title: dto.title ?? course.title,
       description: dto.description ?? course.description,
@@ -128,7 +134,15 @@ export class CoursesService {
       currency: dto.currency ?? course.currency,
     });
 
-    return this.coursesRepository.save(course);
+    const saved = await this.coursesRepository.save(course);
+
+    // Los certificados llevan el nombre del curso impreso: se regeneran
+    // (CertificatesListener) para que muestren el nuevo.
+    if (renamed) {
+      this.eventEmitter.emit(EVENTS.COURSE_RENAMED, new CourseRenamedEvent(course.id));
+    }
+
+    return saved;
   }
 
   /**
@@ -158,19 +172,30 @@ export class CoursesService {
    * Borrado lógico: un curso con inscripciones activas no se puede eliminar
    * físicamente sin romper el historial de esos estudiantes. Se marca
    * isActive:false para sacarlo del catálogo público sin perder datos.
+   *
+   * `deactivatedByAdmin` queda registrado según quién lo bajó: es lo que
+   * `assertCanRestoreCourse`/`assertCourseOwner` usan después para que un
+   * docente no pueda reactivar (ni seguir editando) algo que un admin bajó.
    */
   async remove(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
     // Lo único que el ADMIN puede hacer sobre un curso (además de restaurarlo).
     assertCanRemoveCourse(course, actor);
     course.isActive = false;
+    course.deactivatedByAdmin = actor.role === UserRole.ADMIN;
     return this.coursesRepository.save(course);
   }
 
+  /**
+   * Si el ADMIN lo desactivó, sólo un ADMIN puede restaurarlo — ver
+   * assertCanRestoreCourse. `deactivatedByAdmin` se resetea acá: una vez
+   * restaurado, una próxima baja del propio docente arranca "limpia".
+   */
   async restore(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
-    assertCanRemoveCourse(course, actor);
+    assertCanRestoreCourse(course, actor);
     course.isActive = true;
+    course.deactivatedByAdmin = false;
     return this.coursesRepository.save(course);
   }
 }

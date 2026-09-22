@@ -39,6 +39,15 @@ export class Certificate {
     @Column({ name: 'pdf_url', type: 'varchar', length: 500 })
     pdfUrl: string;
 
+    /**
+     * Título del curso tal como quedó impreso en el PDF actual. Si el curso se
+     * renombra y no coincide con `course.title`, el PDF se regenera (ver
+     * CertificatesService.ensureUpToDate). Null en los emitidos antes de que
+     * existiera esta columna: cuentan como desactualizados.
+     */
+    @Column({ name: 'course_title', type: 'varchar', length: 255, nullable: true })
+    courseTitle: string | null;
+
     @CreateDateColumn({ name: 'issued_at', type: 'timestamptz' })
     issuedAt: Date;
 }

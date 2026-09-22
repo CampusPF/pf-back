@@ -104,34 +104,24 @@ export class CertificatesService {
         // 3. Código corto y único.
         const code = await this.generateUniqueCode();
 
-        // 4. QR apuntando a la verificación pública del front.
-        const verifyUrl = `${this.frontendBaseUrl()}/certificados/verificar/${code}`;
-        const qrBuffer = await QRCode.toBuffer(verifyUrl, { type: 'png', width: 300 });
-
-        // 5. PDF en memoria.
-        const pdfBuffer = await generateCertificatePdf({
-            studentName: enrollment.student.name,
-            courseName: enrollment.course.title,
-            minutes: await this.courseMinutes(courseId),
-            date: this.formatDate(new Date()),
+        // 4. PDF con el QR, a Cloudinary con el código como public_id.
+        const issuedAt = new Date();
+        const pdfUrl = await this.renderAndUpload({
             code,
-            qrBuffer,
+            studentName: enrollment.student.name,
+            courseTitle: enrollment.course.title,
+            courseId,
+            issuedAt,
         });
 
-        // 6. A Cloudinary, con el código como public_id.
-        const uploaded = await this.cloudinary.uploadPublicPdf(
-            pdfBuffer,
-            UPLOAD_FOLDERS.CERTIFICATES,
-            code,
-        );
-
-        // 7. Recién ahora se guarda la fila.
+        // 5. Recién ahora se guarda la fila.
         const certificate = await this.certificateRepository.save(
             this.certificateRepository.create({
                 userId,
                 courseId,
                 code,
-                pdfUrl: uploaded.url,
+                pdfUrl,
+                courseTitle: enrollment.course.title,
             }),
         );
 
@@ -150,13 +140,149 @@ export class CertificatesService {
         return certificate;
     }
 
-    /** Mis certificados, del más nuevo al más viejo. */
+    /**
+     * Mis certificados, del más nuevo al más viejo.
+     *
+     * Cada uno pasa por `ensureUpToDate`: es la red de seguridad del listener
+     * de COURSE_RENAMED (si falló o el server se reinició a mitad de camino)
+     * y lo que actualiza los emitidos antes de guardar `courseTitle`. Si ya
+     * están al día, no se hace nada más que comparar dos strings.
+     */
     async findMine(userId: string): Promise<Certificate[]> {
-        return this.certificateRepository.find({
+        const certificates = await this.certificateRepository.find({
             where: { userId },
             relations: { course: true },
             order: { issuedAt: 'DESC' },
         });
+
+        // En serie: regenerar es CPU (pdfkit) + una subida, y en Render la
+        // memoria es poca.
+        const result: Certificate[] = [];
+        for (const certificate of certificates) {
+            result.push(await this.ensureUpToDate(certificate));
+        }
+        return result;
+    }
+
+    /**
+     * Regenera los certificados de un curso que se renombró. Lo llama
+     * CertificatesListener; uno por uno, por el mismo motivo que findMine.
+     */
+    async refreshCourse(courseId: string): Promise<void> {
+        const certificates = await this.certificateRepository.find({
+            where: { courseId },
+            relations: { course: true },
+        });
+
+        for (const certificate of certificates) {
+            await this.ensureUpToDate(certificate);
+        }
+    }
+
+    /**
+     * Si el PDF quedó desactualizado, lo vuelve a generar con el nombre actual
+     * del curso y lo sube encima del anterior.
+     *
+     * El código, el QR y la fecha de emisión son los originales: cambia el
+     * contenido, no el certificado. El `public_id` es el mismo (`<code>.pdf`),
+     * así que la ruta en Cloudinary no cambia; sólo el `v<version>` de la URL,
+     * y por eso se guarda la `pdfUrl` nueva — la URL versionada evita que el
+     * navegador muestre una copia cacheada con el nombre viejo.
+     *
+     * Best effort: si algo falla se loguea y se devuelve el certificado como
+     * estaba. Su `pdfUrl` sigue sirviendo, y el próximo listado lo reintenta.
+     */
+    async ensureUpToDate(certificate: Certificate): Promise<Certificate> {
+        if (!this.isStale(certificate)) return certificate;
+
+        try {
+            const withUser = certificate.user
+                ? certificate
+                : await this.certificateRepository.findOneOrFail({
+                    where: { id: certificate.id },
+                    relations: { user: true, course: true },
+                });
+
+            const previousUrl = certificate.pdfUrl;
+            const pdfUrl = await this.renderAndUpload({
+                code: certificate.code,
+                studentName: withUser.user.name,
+                courseTitle: certificate.course.title,
+                courseId: certificate.courseId,
+                issuedAt: certificate.issuedAt,
+            });
+
+            await this.certificateRepository.update(certificate.id, {
+                pdfUrl,
+                courseTitle: certificate.course.title,
+            });
+
+            await this.removeLegacyPdf(previousUrl);
+
+            return { ...certificate, pdfUrl, courseTitle: certificate.course.title };
+        } catch (error) {
+            this.logger.error(
+                `No se pudo regenerar el certificado ${certificate.code}`,
+                error instanceof Error ? error.stack : String(error),
+            );
+            return certificate;
+        }
+    }
+
+    /**
+     * Desactualizado = el curso cambió de nombre desde que se generó el PDF, o
+     * el PDF es de antes de subirse con extensión (una URL sin ".pdf" se
+     * entrega como descarga y no se puede ver en el visor).
+     */
+    private isStale(certificate: Certificate): boolean {
+        return (
+            certificate.courseTitle !== certificate.course.title ||
+            !certificate.pdfUrl.endsWith('.pdf')
+        );
+    }
+
+    /**
+     * Los certificados viejos se subieron sin ".pdf" en el public_id, así que
+     * regenerarlos crea un archivo NUEVO (`<code>.pdf`) y el anterior queda
+     * huérfano. Se borra; `destroy` no lanza.
+     */
+    private async removeLegacyPdf(previousUrl: string): Promise<void> {
+        if (previousUrl.endsWith('.pdf')) return;
+
+        const publicId = previousUrl.match(/\/raw\/upload\/(?:v\d+\/)?(.+)$/)?.[1];
+        if (publicId) await this.cloudinary.destroy(publicId, 'raw');
+    }
+
+    /**
+     * Arma el PDF (con el QR a la verificación pública) y lo sube a
+     * Cloudinary. Devuelve la URL.
+     */
+    private async renderAndUpload(data: {
+        code: string;
+        studentName: string;
+        courseTitle: string;
+        courseId: string;
+        issuedAt: Date;
+    }): Promise<string> {
+        const verifyUrl = `${this.frontendBaseUrl()}/certificados/verificar/${data.code}`;
+        const qrBuffer = await QRCode.toBuffer(verifyUrl, { type: 'png', width: 300 });
+
+        const pdfBuffer = await generateCertificatePdf({
+            studentName: data.studentName,
+            courseName: data.courseTitle,
+            minutes: await this.courseMinutes(data.courseId),
+            date: this.formatDate(data.issuedAt),
+            code: data.code,
+            qrBuffer,
+        });
+
+        // El código es el public_id: volver a subirlo sobrescribe el archivo.
+        const uploaded = await this.cloudinary.uploadPublicPdf(
+            pdfBuffer,
+            UPLOAD_FOLDERS.CERTIFICATES,
+            data.code,
+        );
+        return uploaded.url;
     }
 
     /**
