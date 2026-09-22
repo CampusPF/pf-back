@@ -3,13 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Course } from './entities/course.entity';
 import { Category } from '../categories/entities/category.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { generateUniqueSlug } from './utils/slug.util';
 import {
   Actor,
   assertCanRemoveCourse,
+  assertCanRestoreCourse,
   assertCourseOwner,
 } from '../common/utils/assert-course-owner.util';
 import {
@@ -158,19 +159,30 @@ export class CoursesService {
    * Borrado lógico: un curso con inscripciones activas no se puede eliminar
    * físicamente sin romper el historial de esos estudiantes. Se marca
    * isActive:false para sacarlo del catálogo público sin perder datos.
+   *
+   * `deactivatedByAdmin` queda registrado según quién lo bajó: es lo que
+   * `assertCanRestoreCourse`/`assertCourseOwner` usan después para que un
+   * docente no pueda reactivar (ni seguir editando) algo que un admin bajó.
    */
   async remove(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
     // Lo único que el ADMIN puede hacer sobre un curso (además de restaurarlo).
     assertCanRemoveCourse(course, actor);
     course.isActive = false;
+    course.deactivatedByAdmin = actor.role === UserRole.ADMIN;
     return this.coursesRepository.save(course);
   }
 
+  /**
+   * Si el ADMIN lo desactivó, sólo un ADMIN puede restaurarlo — ver
+   * assertCanRestoreCourse. `deactivatedByAdmin` se resetea acá: una vez
+   * restaurado, una próxima baja del propio docente arranca "limpia".
+   */
   async restore(id: string, actor: Actor): Promise<Course> {
     const course = await this.findOne(id);
-    assertCanRemoveCourse(course, actor);
+    assertCanRestoreCourse(course, actor);
     course.isActive = true;
+    course.deactivatedByAdmin = false;
     return this.coursesRepository.save(course);
   }
 }

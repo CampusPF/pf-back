@@ -22,7 +22,8 @@ const env = Object.fromEntries(
         .map(([, k, v]) => [k, v.replace(/^['"]|['"]$/g, '')]),
 );
 
-const args = process.argv.slice(2);
+const args = 
+.argv.slice(2);
 const sendIdx = args.indexOf('--send');
 const to = sendIdx >= 0 ? args[sendIdx + 1] : undefined;
 const only = args.filter((a) => (Object.values(MailTemplate) as string[]).includes(a)) as MailTemplate[];
