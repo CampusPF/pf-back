@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Repository } from 'typeorm';
 import { Course } from './entities/course.entity';
 import { Category } from '../categories/entities/category.entity';
@@ -17,6 +18,7 @@ import {
   CloudinaryService,
   UPLOAD_FOLDERS,
 } from '../file-upload/cloudinary.service';
+import { EVENTS, CourseRenamedEvent } from '../events';
 
 @Injectable()
 export class CoursesService {
@@ -28,6 +30,7 @@ export class CoursesService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly cloudinary: CloudinaryService,
+    private readonly eventEmitter: EventEmitter2,
   ) { }
 
   async create(dto: CreateCourseDto, instructorId: string): Promise<Course> {
@@ -120,6 +123,8 @@ export class CoursesService {
       );
     }
 
+    const renamed = dto.title !== undefined && dto.title !== course.title;
+
     Object.assign(course, {
       title: dto.title ?? course.title,
       description: dto.description ?? course.description,
@@ -129,7 +134,15 @@ export class CoursesService {
       currency: dto.currency ?? course.currency,
     });
 
-    return this.coursesRepository.save(course);
+    const saved = await this.coursesRepository.save(course);
+
+    // Los certificados llevan el nombre del curso impreso: se regeneran
+    // (CertificatesListener) para que muestren el nuevo.
+    if (renamed) {
+      this.eventEmitter.emit(EVENTS.COURSE_RENAMED, new CourseRenamedEvent(course.id));
+    }
+
+    return saved;
   }
 
   /**
