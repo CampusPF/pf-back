@@ -7,6 +7,7 @@ import {
     PaymentSucceededEvent,
     CourseCompletedEvent,
     CertificateIssuedEvent,
+    CourseBlockedByAdminEvent,
 } from '../events';
 import { EmailNotificationsService } from './email-notifications.service';
 
@@ -65,6 +66,17 @@ export class EmailNotificationsListener {
         );
     }
 
+    @OnEvent(EVENTS.COURSE_BLOCKED_BY_ADMIN, { async: true })
+    async onCourseBlockedByAdmin(event: CourseBlockedByAdminEvent): Promise<void> {
+        await this.safely('curso desactivado', event.courseId, () =>
+            this.emails.sendCourseBlockedByAdmin(
+                event.instructorId,
+                event.courseId,
+                event.courseTitle,
+                event.courseUpdatedAt,
+            ),
+        );
+    }
     /**
      * deliver() ya no lanza, pero cargar los datos (usuario, curso) sí puede.
      * Un listener async que lanza termina en un unhandled rejection.
