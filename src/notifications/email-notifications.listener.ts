@@ -7,7 +7,8 @@ import {
     PaymentSucceededEvent,
     CourseCompletedEvent,
     CertificateIssuedEvent,
-    RoleChangedEvent
+    RoleChangedEvent,
+    CourseBlockedByAdminEvent,
 } from '../events';
 import { EmailNotificationsService } from './email-notifications.service';
 
@@ -70,6 +71,18 @@ export class EmailNotificationsListener {
     async onRoleChanged(event: RoleChangedEvent): Promise<void> {
         await this.safely('cambio de rol', event.userId, () =>
             this.emails.sendRoleChanged(event.userId, event.previousRole, event.newRole),
+        );
+    }
+
+    @OnEvent(EVENTS.COURSE_BLOCKED_BY_ADMIN, { async: true })
+    async onCourseBlockedByAdmin(event: CourseBlockedByAdminEvent): Promise<void> {
+        await this.safely('curso desactivado', event.courseId, () =>
+            this.emails.sendCourseBlockedByAdmin(
+                event.instructorId,
+                event.courseId,
+                event.courseTitle,
+                event.courseUpdatedAt,
+            ),
         );
     }
     /**

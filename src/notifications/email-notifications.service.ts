@@ -388,6 +388,32 @@ export class EmailNotificationsService {
         });
     }
 
+    async sendCourseBlockedByAdmin(
+        instructorId: string,
+        courseId: string,
+        courseTitle: string,
+        courseUpdatedAt: Date,
+    ): Promise<void> {
+        const instructor = await this.findUser(instructorId);
+        if (!instructor) return;
+
+        await this.deliver({
+            user: instructor,
+            type: 'course_blocked_by_admin',
+            dedupeKey: `course-blocked:${courseId}:${courseUpdatedAt.getTime()}`,
+            template: MailTemplate.COURSE_BLOCKED_BY_ADMIN,
+            params: {
+                name: instructor.name,
+                courseTitle,
+                coursesUrl: this.url(FRONT_ROUTES.myCourses),
+            },
+            title: `Tu curso "${courseTitle}" fue desactivado`,
+            message: 'Un admin desactivó tu curso. Contactá al equipo de Campus si creés que es un error.',
+            link: FRONT_ROUTES.myCourses,
+            tag: 'course-blocked-by-admin',
+        });
+    }
+
     // ------------------------------------------------------------------
     // Envío + registro
     // ------------------------------------------------------------------

@@ -18,7 +18,7 @@ import {
   CloudinaryService,
   UPLOAD_FOLDERS,
 } from '../file-upload/cloudinary.service';
-import { EVENTS, CourseRenamedEvent } from '../events';
+import { EVENTS, CourseRenamedEvent, CourseBlockedByAdminEvent } from '../events';
 
 @Injectable()
 export class CoursesService {
@@ -178,12 +178,28 @@ export class CoursesService {
    * docente no pueda reactivar (ni seguir editando) algo que un admin bajó.
    */
   async remove(id: string, actor: Actor): Promise<Course> {
-    const course = await this.findOne(id);
+      const course = await this.findOne(id);
     // Lo único que el ADMIN puede hacer sobre un curso (además de restaurarlo).
     assertCanRemoveCourse(course, actor);
     course.isActive = false;
     course.deactivatedByAdmin = actor.role === UserRole.ADMIN;
-    return this.coursesRepository.save(course);
+    const saved = await this.coursesRepository.save(course);
+
+    // Avisar al docente SOLO si fue un admin quien lo desactivó y hay
+    // instructor a quien avisar. Si el propio docente lo pausa, no hay mail.
+    if (actor.role === UserRole.ADMIN && saved.instructor) {
+      this.eventEmitter.emit(
+        EVENTS.COURSE_BLOCKED_BY_ADMIN,
+        new CourseBlockedByAdminEvent(
+          saved.instructor.id,
+          saved.id,
+          saved.title,
+          new Date(), 
+        ),
+      );
+    }
+
+    return saved;
   }
 
   /**
