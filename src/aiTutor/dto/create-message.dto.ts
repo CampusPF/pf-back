@@ -1,13 +1,27 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, MaxLength, IsIn, IsOptional, ValidateIf } from 'class-validator';
+import { TUTOR_QUICK_ACTIONS } from '../tutor-prompt';
+import type { TutorQuickAction } from '../tutor-prompt';
 
+const ACTIONS = Object.keys(TUTOR_QUICK_ACTIONS);
+
+/** Se manda `content` (texto libre) O `action` (una burbuja), no los dos. */
 export class CreateMessageDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '¿Podés explicarme de nuevo qué es un closure?',
-    description: 'Mensaje del estudiante para el tutor IA',
+    description: 'Mensaje libre del estudiante. Requerido si no se manda `action`.',
   })
+  @ValidateIf((o: CreateMessageDto) => !o.action)
   @IsString()
   @IsNotEmpty()
   @MaxLength(2000)
-  content: string;
+  content?: string;
+
+  @ApiPropertyOptional({
+    enum: ACTIONS,
+    description: 'Acción rápida (burbuja). Si viene, se ignora `content`.',
+  })
+  @IsOptional()
+  @IsIn(ACTIONS)
+  action?: TutorQuickAction;
 }
