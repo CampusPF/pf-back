@@ -11,7 +11,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         private readonly usersService: UsersService,
     ) {
         super({
-            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+            jwtFromRequest: ExtractJwt.fromExtractors([
+                ExtractJwt.fromAuthHeaderAsBearerToken(),
+            ]),
             // false = el token vencido se rechaza (default de passport-jwt,
             // explícito acá para que no se cambie sin querer).
             ignoreExpiration: false,
