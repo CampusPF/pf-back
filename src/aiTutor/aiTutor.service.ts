@@ -134,7 +134,9 @@ export class AiTutorService {
 
     async remove(id: string, userId: string): Promise<void> {
         await this.findOne(id, userId);
-        await this.conversationsRepository.delete(id);
+        // Borrado lógico: si se borraran los mensajes, el contador diario del
+        // plan Free volvería atrás y "vaciar" regalaría mensajes.
+        await this.conversationsRepository.softDelete(id);
     }
 
     // --- Mensajes ---
@@ -224,12 +226,14 @@ export class AiTutorService {
     }> {
         const { startOfDay, endOfDay } = this.getTodayRange();
 
+        // withDeleted: también cuentan los mensajes de conversaciones vaciadas.
         const messagesUsedToday = await this.messagesRepository.count({
             where: {
                 role: MessageRole.USER,
                 conversation: { student: { id: userId } },
                 createdAt: Between(startOfDay, endOfDay),
             },
+            withDeleted: true,
         });
 
         const isUnlimited = await this.hasUnlimitedUsage(userId);
@@ -253,6 +257,8 @@ export class AiTutorService {
             .innerJoin('l.module', 'mod')
             .innerJoin('mod.course', 'c')
             .innerJoin('conv.student', 's')
+            // Las conversaciones que el alumno vació también fueron preguntas.
+            .withDeleted()
             .select('l.id', 'lessonId')
             .addSelect('l.title', 'lessonTitle')
             .addSelect('mod.title', 'moduleTitle')
@@ -370,7 +376,11 @@ export class AiTutorService {
         }
     }
 
+    /** Premium, docentes y admins: sin límite. Para el docente es su beneficio del tutor. */
     private async hasUnlimitedUsage(userId: string): Promise<boolean> {
+        const user = await this.usersRepository.findOne({ where: { id: userId }, select: { id: true, role: true } });
+        if (user?.role === UserRole.TEACHER || user?.role === UserRole.ADMIN) return true;
+
         const subscription = await this.subscriptionsRepository.findOne({
             where: { user: { id: userId } },
             order: { createdAt: 'DESC' },
