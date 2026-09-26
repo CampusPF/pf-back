@@ -18,7 +18,7 @@ import {
   CloudinaryService,
   UPLOAD_FOLDERS,
 } from '../file-upload/cloudinary.service';
-import { EVENTS, UserRegisteredEvent } from '../events';
+import { EVENTS, UserRegisteredEvent, RoleChangedEvent } from '../events';
 
 /** Lo que ve el usuario de sí mismo en GET /users/me. Nunca incluye el hash. */
 export interface UserProfile {
@@ -185,10 +185,21 @@ export class UsersService {
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
+    const previousRole = user.role;
 
     Object.assign(user, dto);
+    const saved = await this.usersRepository.save(user);
 
-    return this.usersRepository.save(user);
+    // Emitimos SOLO si el rol cambió de verdad. Si un admin manda el mismo
+    // rol (o edita otros campos sin tocar el rol), no hay mail.
+    if (dto.role && dto.role !== previousRole) {
+        this.eventEmitter.emit(
+            EVENTS.ROLE_CHANGED,
+            new RoleChangedEvent(saved.id, previousRole, saved.role),
+        );
+    }
+
+    return saved;
   }
 
   /* ── Perfil propio (GET/PATCH /users/me) ──────────────────────────── */

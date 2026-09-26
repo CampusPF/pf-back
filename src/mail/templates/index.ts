@@ -11,6 +11,7 @@ import { premiumConfirmedEmail } from './premium-confirmed.template';
 import { studentReminderEmail } from './student-reminder.template';
 import { teacherNewStudentEmail } from './teacher-new-student.template';
 import { teacherReminderEmail } from './teacher-reminder.template';
+import { roleChangedEmail } from './role-changed.template'; 
 
 export type { MailContext, MailParams, RenderedMail } from './layout';
 
@@ -28,6 +29,7 @@ export enum MailTemplate {
     STUDENT_REMINDER = 'student-reminder',
     TEACHER_NEW_STUDENT = 'teacher-new-student',
     TEACHER_REMINDER = 'teacher-reminder',
+    ROLE_CHANGED = 'role-changed',
 }
 
 type Renderer = (params: MailParams, ctx: MailContext) => RenderedMail;
@@ -46,6 +48,7 @@ const RENDERERS: Record<MailTemplate, Renderer> = {
     [MailTemplate.STUDENT_REMINDER]: studentReminderEmail,
     [MailTemplate.TEACHER_NEW_STUDENT]: teacherNewStudentEmail,
     [MailTemplate.TEACHER_REMINDER]: teacherReminderEmail,
+    [MailTemplate.ROLE_CHANGED]: roleChangedEmail,
 };
 
 /** Genera el asunto y el HTML final de un mail. Función pura, sin red. */

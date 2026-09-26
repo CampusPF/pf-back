@@ -356,6 +356,38 @@ export class EmailNotificationsService {
         });
     }
 
+    async sendRoleChanged(
+        userId: string,
+        previousRole: UserRole,
+        newRole: UserRole,
+    ): Promise<void> {
+        const user = await this.findUser(userId);
+        if (!user) return;
+
+        const roleLabel: Record<UserRole, string> = {
+            [UserRole.STUDENT]: 'estudiante',
+            [UserRole.TEACHER]: 'docente',
+            [UserRole.ADMIN]: 'administrador',
+        };
+
+        await this.deliver({
+            user,
+            type: 'role_changed',
+            dedupeKey: `role-changed:${previousRole}->${newRole}`,
+            template: MailTemplate.ROLE_CHANGED,
+            params: {
+                name: user.name,
+                previousRole: roleLabel[previousRole],
+                newRole: roleLabel[newRole],
+                dashboardUrl: this.url(FRONT_ROUTES.dashboard),
+            },
+            title: 'Tu rol en Campus cambió',
+            message: `Ahora sos ${roleLabel[newRole]}.`,
+            link: FRONT_ROUTES.dashboard,
+            tag: 'role-changed',
+        });
+    }
+
     // ------------------------------------------------------------------
     // Envío + registro
     // ------------------------------------------------------------------
