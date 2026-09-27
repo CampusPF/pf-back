@@ -6,7 +6,6 @@ export * from './user-registered.event';
 export * from './course-enrolled.event';
 export * from './payment-succeeded.event';
 export * from './course-renamed.event';
-export * from './role-changed.event';
 
 /**
  * Los nombres de evento, en un solo lugar.
@@ -24,5 +23,4 @@ export const EVENTS = {
   COURSE_ENROLLED: 'course.enrolled',
   PAYMENT_SUCCEEDED: 'payment.succeeded',
   COURSE_RENAMED: 'course.renamed',
-  ROLE_CHANGED: 'user.role-changed',
 } as const;

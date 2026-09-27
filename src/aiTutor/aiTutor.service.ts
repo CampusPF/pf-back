@@ -101,6 +101,16 @@ export class AiTutorService {
         return { ...conversation, lesson: { id: lesson.id, title: lesson.title } as Lesson, messages: [] } as Conversation;
     }
 
+    // PREGUNTAS TIPICAS
+    getSuggestedQuestions(): string[] {
+        return [
+            '¿Me podés explicar este tema de forma más simple?',
+            '¿Me darías un ejemplo práctico de esto?',
+            '¿Cuáles son los puntos clave que tengo que recordar de esta lección?',
+            'No entendí muy bien, ¿podrías darme un ejemplo para entenderlo mejor?',
+        ];
+    }
+
     async findAllByUser(userId: string): Promise<Conversation[]> {
         return this.conversationsRepository.find({
             where: { student: { id: userId } },
