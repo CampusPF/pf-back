@@ -7,22 +7,29 @@ import { Message } from './entities/message.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
 import { User } from '../users/entities/user.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
+import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
+import { LessonProgress } from '../lesson-progress/entities/lesson-progress.entity';
 import { AuthModule } from '../auth/auth.module';
+import { LessonsModule } from '../lessons/lessons.module';
 import { AI_PROVIDER } from './providers/ai-provider.interface';
-import { MockAiProvider } from './providers/mock-ai.provider';
+import { GeminiProvider } from './providers/gemini.provider';
+import { GroqProvider } from './providers/groq.provider';
+import { FailoverAiProvider } from './providers/failover-ai.provider';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Conversation, Message, Lesson, User, Subscription]),
+        TypeOrmModule.forFeature([Conversation, Message, Lesson, User, Subscription, CourseEnrollment, LessonProgress]),
         AuthModule,
+        LessonsModule, // LessonsAccessService: misma regla de acceso que el reproductor
     ],
     controllers: [AiTutorController],
     providers: [
         AiTutorService,
-        {
-            provide: AI_PROVIDER,
-            useClass: MockAiProvider, // 👈 reemplazar por AnthropicProvider/OpenAiProvider cuando decidas
-        },
+        GeminiProvider,
+        GroqProvider,
+        // El servicio sólo conoce AI_PROVIDER; el failover decide Gemini/Groq
+        // según AI_PROVIDER y las keys presentes en el .env.
+        { provide: AI_PROVIDER, useClass: FailoverAiProvider },
     ],
 })
 export class AiTutorModule { }
