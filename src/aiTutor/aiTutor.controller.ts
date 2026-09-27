@@ -42,6 +42,13 @@ export class AiTutorController {
         return this.aiTutorService.createConversation(dto, userId);
     }
 
+    @Get('suggested-questions')
+    @ApiOperation({ summary: 'Obtener preguntas sugeridas para el tutor' })
+    @ApiResponse({ status: 200, description: 'Lista de preguntas sugeridas' })
+    getSuggestedQuestions() {
+        return this.aiTutorService.getSuggestedQuestions();
+    }
+
     @Get('conversations')
     @ApiOperation({ summary: 'Listar mis conversaciones' })
     findAllMine(@CurrentUser('id') userId: string) {

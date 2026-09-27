@@ -7,7 +7,6 @@ import {
     PaymentSucceededEvent,
     CourseCompletedEvent,
     CertificateIssuedEvent,
-    RoleChangedEvent
 } from '../events';
 import { EmailNotificationsService } from './email-notifications.service';
 
@@ -66,12 +65,6 @@ export class EmailNotificationsListener {
         );
     }
 
-    @OnEvent(EVENTS.ROLE_CHANGED, { async: true })
-    async onRoleChanged(event: RoleChangedEvent): Promise<void> {
-        await this.safely('cambio de rol', event.userId, () =>
-            this.emails.sendRoleChanged(event.userId, event.previousRole, event.newRole),
-        );
-    }
     /**
      * deliver() ya no lanza, pero cargar los datos (usuario, curso) sí puede.
      * Un listener async que lanza termina en un unhandled rejection.
