@@ -10,6 +10,7 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ChatService } from './chat.service';
+import { ChatContactDto } from './dto/chat-contact.dto';
 import { Message } from './entities/message.entity';
 
 @ApiTags('chat')
@@ -18,6 +19,17 @@ import { Message } from './entities/message.entity';
 @Controller('chat')
 export class ChatController {
     constructor(private readonly chatService: ChatService) { }
+
+    /* Va antes de ':otherUserId/messages' y ':otherUserId/read': Nest resuelve
+       las rutas GET en el orden en que se declaran, y 'contacts' matchearía
+       como si fuera un otherUserId si quedara después. */
+    @Get('contacts')
+    @ApiOperation({ summary: 'Listar con quién puedo chatear (docentes o alumnos, según mi rol)' })
+    @ApiResponse({ status: 200, description: 'Contactos con último mensaje y no leídos', type: ChatContactDto, isArray: true })
+    @ApiResponse({ status: 403, description: 'Los administradores no participan del chat' })
+    getContacts(@CurrentUser('id') userId: string): Promise<ChatContactDto[]> {
+        return this.chatService.getContacts(userId);
+    }
 
     @Get(':otherUserId/messages')
     @ApiOperation({ summary: 'Obtener el historial de una conversación' })

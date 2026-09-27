@@ -15,6 +15,7 @@ import { Repository } from 'typeorm';
 import { Server, Socket } from 'socket.io';
 import { User, UserRole } from '../users/entities/user.entity';
 import { ChatService } from './chat.service';
+import { Message } from './entities/message.entity';
 
 interface ChatAccessToken {
     sub: string;
@@ -75,7 +76,7 @@ export class ChatGateway implements OnGatewayConnection {
     async sendMessage(
         @ConnectedSocket() client: Socket,
         @MessageBody() payload: unknown,
-    ): Promise<void> {
+    ): Promise<Message> {
         const userId = client.data.userId as string | undefined;
         if (!userId) throw new WsException('Autenticación requerida');
 
@@ -96,6 +97,10 @@ export class ChatGateway implements OnGatewayConnection {
                 .to(this.userRoom(userId))
                 .to(this.userRoom(receiverId))
                 .emit('message:new', message);
+            // Nest manda este valor como ack de vuelta a quien envió: así el
+            // front confirma el envío (y obtiene el id/createdAt reales) sin
+            // depender sólo del 'message:new' que ya recibió por el emit.
+            return message;
         } catch (error) {
             if (error instanceof HttpException) throw new WsException(error.message);
             throw new WsException('No se pudo enviar el mensaje');
