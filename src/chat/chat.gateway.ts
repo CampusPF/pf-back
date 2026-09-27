@@ -44,6 +44,16 @@ export class ChatGateway implements OnGatewayConnection {
         private readonly usersRepository: Repository<User>,
     ) { }
 
+    /**
+     * Al conectar:
+     *  1. Verifica el JWT.
+     *  2. Rechaza a los admins.
+     *  3. Une al socket a la room de CADA conversación en la que participa.
+     *
+     * Rooms: `conversation:<conversationId>`. Cuando alguien manda un mensaje
+     * a una conversación, se emite a esa room → lo reciben TODOS los
+     * participantes conectados.
+     */
     async handleConnection(client: Socket): Promise<void> {
         try {
             const token = this.getToken(client);
@@ -65,7 +75,12 @@ export class ChatGateway implements OnGatewayConnection {
             }
 
             client.data.userId = user.id;
-            await client.join(this.userRoom(user.id));
+
+            // Unir al socket a la room de cada conversación del user.
+            const conversations = await this.chatService.getMyConversations(user.id);
+            for (const conv of conversations) {
+                await client.join(this.conversationRoom(conv.id));
+            }
         } catch {
             client.disconnect(true);
         }
@@ -80,21 +95,21 @@ export class ChatGateway implements OnGatewayConnection {
         if (!userId) throw new WsException('Autenticación requerida');
 
         if (typeof payload !== 'object' || payload === null) {
-            throw new WsException('El mensaje debe incluir receiverId y content');
+            throw new WsException('El mensaje debe incluir conversationId y content');
         }
 
         const body = payload as Record<string, unknown>;
-        const receiverId = typeof body.receiverId === 'string' ? body.receiverId : '';
+        const conversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
         const content = body.content;
-        if (!isUUID(receiverId) || typeof content !== 'string' || content.length === 0) {
-            throw new WsException('receiverId debe ser un UUID y content un texto no vacío');
+        if (!isUUID(conversationId) || typeof content !== 'string' || content.length === 0) {
+            throw new WsException('conversationId debe ser un UUID y content un texto no vacío');
         }
 
         try {
-            const message = await this.chatService.sendMessage(userId, receiverId, content);
+            const message = await this.chatService.sendMessage(userId, conversationId, content);
+            // Emitir a TODOS los participantes de la conversación.
             this.server
-                .to(this.userRoom(userId))
-                .to(this.userRoom(receiverId))
+                .to(this.conversationRoom(conversationId))
                 .emit('message:new', message);
         } catch (error) {
             if (error instanceof HttpException) throw new WsException(error.message);
@@ -115,7 +130,7 @@ export class ChatGateway implements OnGatewayConnection {
         return null;
     }
 
-    private userRoom(userId: string): string {
-        return `user:${userId}`;
+    private conversationRoom(conversationId: string): string {
+        return `conversation:${conversationId}`;
     }
 }
