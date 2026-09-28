@@ -1,7 +1,7 @@
 import {
     Entity,
     PrimaryGeneratedColumn,
-    Column,
+    DeleteDateColumn,
     ManyToOne,
     OneToMany,
     CreateDateColumn,
@@ -26,4 +26,9 @@ export class Conversation {
 
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;
+
+    // Borrado lógico: al vaciar, la conversación se oculta pero sus mensajes
+    // siguen contando para el límite diario del plan Free y para las métricas.
+    @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+    deletedAt: Date | null;
 }

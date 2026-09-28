@@ -6,6 +6,7 @@ import {
     CourseCompletedEvent,
     CertificateIssuedEvent,
     QuizPassedEvent,
+    CourseEnrolledEvent,
 } from '../events';
 import { AchievementsService } from './achievements.service';
 
@@ -34,6 +35,13 @@ export class AchievementsListener {
 
     @OnEvent(EVENTS.CERTIFICATE_ISSUED)
     async onCertificateIssued(event: CertificateIssuedEvent): Promise<void> {
+        await this.evaluate(event.userId);
+    }
+
+    // Para "Manos a la obra" (primera inscripción): sin esto recién se
+    // desbloquearía al completar la primera lección.
+    @OnEvent(EVENTS.COURSE_ENROLLED)
+    async onCourseEnrolled(event: CourseEnrolledEvent): Promise<void> {
         await this.evaluate(event.userId);
     }
 

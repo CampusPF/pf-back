@@ -3,16 +3,33 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Achievement } from './entities/achievement.entity';
 import { UserAchievement } from './entities/user-achievement.entity';
-import { Certificate } from '../certificates/entities/certificate.entity';
-import { XpService } from '../gamification/xp.service';
-import { getLevelFromXp } from '../gamification/xp.config';
-import { UserActivityService } from '../user-activity/user-activity.service';
-import { ProgressStatsService } from '../progress-tracking/progress-stats.service';
+import {
+    AchievementMetricsService,
+    isAchievementMetric,
+    type AchievementMetrics,
+} from './achievement-metrics.service';
 
 /** La forma del jsonb `condition` del catálogo (ver achievement.seed.ts). */
 interface AchievementCondition {
     type: string;
     value: number;
+}
+
+/** Un logro visto por un usuario puntual, con su progreso (GET /me/achievements). */
+export interface UserAchievementView {
+    code: string;
+    nombre: string;
+    descripcion: string;
+    icono: string;
+    /** El `type` de la condición: el front lo usa para agrupar y para la unidad ("lecciones", "días"). */
+    tipo: string;
+    meta: number;
+    /** Topeado en `meta`: un logro de 10 lecciones con 14 hechas muestra 10/10. */
+    actual: number;
+    desbloqueado: boolean;
+    unlockedAt: Date | null;
+    /** Se desbloqueó en ESTA consulta: el front lo puede celebrar una sola vez. */
+    nuevo: boolean;
 }
 
 @Injectable()
@@ -24,42 +41,75 @@ export class AchievementsService {
         private readonly achievementRepository: Repository<Achievement>,
         @InjectRepository(UserAchievement)
         private readonly userAchievementRepository: Repository<UserAchievement>,
-        @InjectRepository(Certificate)
-        private readonly certificateRepository: Repository<Certificate>,
-        private readonly xpService: XpService,
-        private readonly userActivityService: UserActivityService,
-        private readonly progressStatsService: ProgressStatsService,
+        private readonly metricsService: AchievementMetricsService,
     ) { }
 
     /**
      * Revisa los logros que al usuario le faltan y desbloquea los que ya
-     * cumple.
+     * cumple. Devuelve los ids de los que se desbloquearon ahora.
      *
-     * Sólo evalúa los PENDIENTES: los ya desbloqueados no se vuelven a
-     * consultar, así que a medida que el alumno los junta, esto hace cada vez
-     * menos trabajo. Un logro desbloqueado no se revoca nunca, aunque la
-     * condición deje de cumplirse (una racha que se corta no te quita el
+     * Sólo evalúa los PENDIENTES, y las métricas se cargan una sola vez (en
+     * paralelo) para todos. Un logro desbloqueado no se revoca nunca, aunque
+     * la condición deje de cumplirse (una racha que se corta no te quita el
      * logro de racha).
      */
-    async evaluateForUser(userId: string): Promise<void> {
-        const unlocked = await this.userAchievementRepository.find({
-            where: { userId },
-            select: { achievementId: true },
-        });
+    async evaluateForUser(userId: string): Promise<string[]> {
+        const [unlocked, all] = await Promise.all([
+            this.userAchievementRepository.find({ where: { userId }, select: { achievementId: true } }),
+            this.achievementRepository.find(),
+        ]);
         const unlockedIds = new Set(unlocked.map((u) => u.achievementId));
-
-        const all = await this.achievementRepository.find();
         const pending = all.filter((a) => !unlockedIds.has(a.id));
+        if (pending.length === 0) return [];
 
-        if (pending.length === 0) return;
+        const metrics = await this.metricsService.getMetrics(userId);
+        const newlyUnlocked: string[] = [];
 
         for (const achievement of pending) {
-            const condition = achievement.condition as unknown as AchievementCondition;
-
-            if (await this.checkCondition(userId, condition)) {
+            if (this.isMet(achievement, metrics)) {
                 await this.unlock(userId, achievement.id);
+                newlyUnlocked.push(achievement.id);
             }
         }
+        return newlyUnlocked;
+    }
+
+    /**
+     * Todos los logros del catálogo con el progreso del usuario.
+     *
+     * Evalúa antes de responder: así un logro nuevo del catálogo (o uno que
+     * el usuario ya cumplía antes de que existiera) aparece desbloqueado al
+     * abrir la pantalla, sin esperar a la próxima lección completada.
+     */
+    async getForUser(userId: string): Promise<UserAchievementView[]> {
+        const newlyUnlocked = new Set(await this.evaluateForUser(userId));
+
+        const [all, unlocked, metrics] = await Promise.all([
+            this.achievementRepository.find(),
+            this.userAchievementRepository.find({ where: { userId } }),
+            this.metricsService.getMetrics(userId),
+        ]);
+        const unlockedAt = new Map(unlocked.map((u) => [u.achievementId, u.unlockedAt]));
+
+        return all
+            .map((achievement) => {
+                const { type, value } = this.conditionOf(achievement);
+                const current = isAchievementMetric(type) ? metrics[type] : 0;
+                const date = unlockedAt.get(achievement.id) ?? null;
+                return {
+                    code: achievement.code,
+                    nombre: achievement.name,
+                    descripcion: achievement.description,
+                    icono: achievement.icon,
+                    tipo: type,
+                    meta: value,
+                    actual: date ? value : Math.min(current, value),
+                    desbloqueado: date !== null,
+                    unlockedAt: date,
+                    nuevo: newlyUnlocked.has(achievement.id),
+                };
+            })
+            .sort((a, b) => a.tipo.localeCompare(b.tipo) || a.meta - b.meta);
     }
 
     /**
@@ -77,51 +127,23 @@ export class AchievementsService {
             .execute();
     }
 
+    private conditionOf(achievement: Achievement): AchievementCondition {
+        return achievement.condition as unknown as AchievementCondition;
+    }
+
     /**
-     * Traduce una condición del catálogo a una pregunta concreta.
-     *
      * Un `type` desconocido devuelve false en vez de romper: si alguien siembra
-     * un logro con una condición que este switch todavía no entiende, ese logro
-     * simplemente no se desbloquea, y el resto sigue funcionando.
+     * un logro con una condición que todavía no está en ACHIEVEMENT_METRICS,
+     * ese logro simplemente no se desbloquea, y el resto sigue funcionando.
      */
-    private async checkCondition(
-        userId: string,
-        condition: AchievementCondition,
-    ): Promise<boolean> {
-        switch (condition.type) {
-            case 'lessons_completed':
-                return (
-                    (await this.progressStatsService.countCompletedLessons(userId)) >=
-                    condition.value
-                );
-
-            case 'courses_completed': {
-                const counts = await this.progressStatsService.countCoursesByStatus(userId);
-                return counts.completados >= condition.value;
-            }
-
-            case 'streak_days':
-                return (
-                    (await this.userActivityService.getCurrentStreak(userId)) >=
-                    condition.value
-                );
-
-            case 'certificates_issued':
-                return (
-                    (await this.certificateRepository.count({ where: { userId } })) >=
-                    condition.value
-                );
-
-            case 'level_reached': {
-                const xp = await this.xpService.getTotalXp(userId);
-                return getLevelFromXp(xp).level >= condition.value;
-            }
-
-            default:
-                this.logger.warn(
-                    `Condición de logro desconocida: "${condition.type}". Ese logro no se va a desbloquear nunca hasta que se agregue acá.`,
-                );
-                return false;
+    private isMet(achievement: Achievement, metrics: AchievementMetrics): boolean {
+        const { type, value } = this.conditionOf(achievement);
+        if (!isAchievementMetric(type)) {
+            this.logger.warn(
+                `Condición de logro desconocida: "${type}". Ese logro no se va a desbloquear nunca hasta que se agregue a ACHIEVEMENT_METRICS.`,
+            );
+            return false;
         }
+        return metrics[type] >= value;
     }
 }

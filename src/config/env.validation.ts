@@ -105,13 +105,15 @@ export const envValidationSchema = Joi.object({
   SWAGGER_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
 
   // --- Proveedor de IA (tutor) ---
-  // Hoy el binding activo es MockAiProvider, así que ninguna de estas es
-  // requerida todavía. Cuando se conecte un proveedor real hay que moverla
-  // a requiredInProd().
-  // TODO(seguridad): decidir proveedor de IA (Anthropic u OpenAI) y marcar
-  // su API key como requerida en producción.
-  ANTHROPIC_API_KEY: Joi.string().optional(),
-  OPENAI_API_KEY: Joi.string().optional(),
+  // AI_PROVIDER elige cuál se prueba primero; el otro queda de respaldo
+  // (failover) si tiene key. Sin ninguna key el tutor responde 503.
+  AI_PROVIDER: Joi.string().valid('gemini', 'groq').default('gemini'),
+  GEMINI_API_KEY: Joi.string().optional(),
+  GEMINI_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
+  GROQ_API_KEY: Joi.string().optional(),
+  GROQ_MODEL: Joi.string().default('openai/gpt-oss-120b'),
+  // Mensajes por día al tutor en el plan gratis (Premium = ilimitado).
+  AI_FREE_DAILY_LIMIT: Joi.number().integer().positive().default(20),
 
   // NOTA: el proyecto arrancó con notas para Mercado Pago pero el equipo fue
   // con Stripe (ver bloque STRIPE_* arriba). Las variables MP_* quedaron sin

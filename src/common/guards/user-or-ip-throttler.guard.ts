@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ExecutionContext, Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 /**
@@ -15,6 +15,14 @@ import { ThrottlerGuard } from '@nestjs/throttler';
  */
 @Injectable()
 export class UserOrIpThrottlerGuard extends ThrottlerGuard {
+  canActivate(context: ExecutionContext): Promise<boolean> {
+    // El rate limiting no aplica a WebSockets. El guard de la librería
+    // llama a res.header(), que no existe en un socket.
+    if (context.getType() !== 'http') {
+      return Promise.resolve(true);
+    }
+    return super.canActivate(context);
+  }
   protected async getTracker(req: Record<string, any>): Promise<string> {
     const userId = req.user?.id;
     if (userId) return `user:${userId}`;

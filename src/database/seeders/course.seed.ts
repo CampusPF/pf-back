@@ -47,61 +47,75 @@ export async function seedCourses(dataSource: DataSource) {
     priceInCents?: number;
     currency?: string;
   }> = [
-    {
-      title: 'Introducción a NestJS',
-      description: 'Aprendé a construir APIs REST robustas con NestJS, TypeORM y PostgreSQL desde cero.',
-      difficulty: CourseDifficulty.BEGINNER,
-      imageUrl: 'https://cdn.campuslite.com/covers/nestjs-intro.png',
-      categoryName: 'Programación',
-    },
-    {
-      title: 'React Avanzado con TypeScript',
-      description: 'Patrones avanzados, manejo de estado, performance y testing en aplicaciones React reales.',
-      difficulty: CourseDifficulty.ADVANCED,
-      imageUrl: 'https://cdn.campuslite.com/covers/react-avanzado.png',
-      categoryName: 'Programación',
-      // Curso premium de ejemplo para probar el checkout individual con Stripe.
-      priceInCents: 4999,
-      currency: 'usd',
-    },
-    {
-      title: 'Fundamentos de UX/UI',
-      description: 'Principios de diseño centrado en el usuario, wireframing y prototipado con Figma.',
-      difficulty: CourseDifficulty.BEGINNER,
-      imageUrl: 'https://cdn.campuslite.com/covers/ux-ui-fundamentos.png',
-      categoryName: 'Diseño',
-    },
-    {
-      title: 'Marketing Digital para Emprendedores',
-      description: 'Estrategias prácticas de redes sociales, SEO y campañas pagas para hacer crecer tu negocio.',
-      difficulty: CourseDifficulty.INTERMEDIATE,
-      imageUrl: 'https://cdn.campuslite.com/covers/marketing-digital.png',
-      categoryName: 'Marketing',
-    },
-    {
-      title: 'Inglés de Negocios',
-      description: 'Vocabulario y expresiones clave para reuniones, negociaciones y correspondencia profesional.',
-      difficulty: CourseDifficulty.INTERMEDIATE,
-      imageUrl: 'https://cdn.campuslite.com/covers/ingles-negocios.png',
-      categoryName: 'Idiomas',
-    },
-    {
-      title: 'Finanzas para no Financieros',
-      description: 'Conceptos esenciales de contabilidad, presupuesto y análisis financiero para tomar mejores decisiones.',
-      difficulty: CourseDifficulty.BEGINNER,
-      imageUrl: 'https://cdn.campuslite.com/covers/finanzas-basicas.png',
-      categoryName: 'Negocios',
-    },
-  ];
+      {
+        title: 'Introducción a NestJS',
+        description: 'Aprendé a construir APIs REST robustas con NestJS, TypeORM y PostgreSQL desde cero.',
+        difficulty: CourseDifficulty.BEGINNER,
+        imageUrl: 'https://res.cloudinary.com/d1zbodn5/image/upload/v1790545628/g79gb8u7bpfbea5fiedr.png',
+        categoryName: 'Programación',
+      },
+      {
+        title: 'React Avanzado con TypeScript',
+        description: 'Patrones avanzados, manejo de estado, performance y testing en aplicaciones React reales.',
+        difficulty: CourseDifficulty.ADVANCED,
+        imageUrl: 'https://res.cloudinary.com/d1zbodn5/image/upload/v1790523290/wg6lhttb1bbf0wqc2gih.png',
+        categoryName: 'Programación',
+        priceInCents: 4999,
+        currency: 'usd',
+      },
+      {
+        title: 'Fundamentos de UX/UI',
+        description: 'Principios de diseño centrado en el usuario, wireframing y prototipado con Figma.',
+        difficulty: CourseDifficulty.BEGINNER,
+        imageUrl: 'https://res.cloudinary.com/d1zbodn5/image/upload/v1790545533/i9zpzf4jteefkw1fcmbx.png',
+        categoryName: 'Diseño',
+      },
+      {
+        title: 'Marketing Digital para Emprendedores',
+        description: 'Estrategias prácticas de redes sociales, SEO y campañas pagas para hacer crecer tu negocio.',
+        difficulty: CourseDifficulty.INTERMEDIATE,
+        imageUrl: 'https://res.cloudinary.com/d1zbodn5/image/upload/v1790545416/om3aftdbi7xbqvjzrewk.png',
+        categoryName: 'Marketing',
+      },
+      {
+        title: 'Inglés de Negocios',
+        description: 'Vocabulario y expresiones clave para reuniones, negociaciones y correspondencia profesional.',
+        difficulty: CourseDifficulty.INTERMEDIATE,
+        imageUrl: 'https://res.cloudinary.com/d1zbodn5/image/upload/v1790545337/tlhtq9a5oxlxhvb57xrt.png',
+        categoryName: 'Idiomas',
+      },
+      {
+        title: 'Finanzas para no Financieros',
+        description: 'Conceptos esenciales de contabilidad, presupuesto y análisis financiero para tomar mejores decisiones.',
+        difficulty: CourseDifficulty.BEGINNER,
+        imageUrl: 'https://res.cloudinary.com/d1zbodn5/image/upload/v1790545259/bpmrq5xiibwcmak3hvew.png',
+        categoryName: 'Negocios',
+      },
+    ];
 
   for (const data of coursesData) {
-    const exists = await courseRepo.findOne({ where: { title: data.title } });
-    if (exists) continue;
-
     const category = categories.find((c) => c.name === data.categoryName);
+    if (!category) {
+      throw new Error(
+        `Categoría "${data.categoryName}" no encontrada para el curso "${data.title}". Revisá categoryNames.`,
+      );
+    }
 
-    // El seed inserta con el repository directo, así que el slug hay que
-    // generarlo acá igual que en CoursesService.create.
+    const existing = await courseRepo.findOne({ where: { title: data.title } });
+
+    if (existing) {
+      existing.description = data.description;
+      existing.difficulty = data.difficulty;
+      existing.imageUrl = data.imageUrl;
+      existing.priceInCents = data.priceInCents ?? 0;
+      existing.currency = data.currency ?? 'usd';
+      existing.category = category;
+      existing.instructor = existing.instructor ?? instructor;
+
+      await courseRepo.save(existing);
+      continue;
+    }
+
     const slug = await generateUniqueSlug(
       data.title,
       async (candidate) => (await courseRepo.countBy({ slug: candidate })) > 0,
@@ -122,5 +136,5 @@ export async function seedCourses(dataSource: DataSource) {
     );
   }
 
-  console.log(`✅ Seed de cursos completado (${coursesData.length} cursos verificados/creados).`);
+  console.log(`✅ Seed de cursos completado (${coursesData.length} cursos verificados/creados/actualizados).`);
 }
