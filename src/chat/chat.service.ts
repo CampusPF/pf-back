@@ -2,7 +2,6 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
-import { Subscription, SubscriptionPlan, SubscriptionStatus } from '../subscriptions/entities/subscription.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { Message } from './entities/message.entity';
@@ -20,28 +19,15 @@ export class ChatService {
         private readonly messagesRepository: Repository<Message>,
         @InjectRepository(User)
         private readonly usersRepository: Repository<User>,
-        @InjectRepository(Subscription)
-        private readonly subscriptionsRepository: Repository<Subscription>,
         @InjectRepository(CourseEnrollment)
         private readonly enrollmentsRepository: Repository<CourseEnrollment>,
     ) { }
 
     async sendMessage(senderId: string, receiverId: string, content: string): Promise<Message> {
         const { studentId } = await this.assertChatParticipants(senderId, receiverId);
+        // Cualquier alumno con el curso activo puede escribirle a su docente:
+        // el chat ya no es un beneficio exclusivo de Premium.
         await this.assertSharedActiveCourse(studentId, senderId === studentId ? receiverId : senderId);
-
-        if (senderId === studentId) {
-            const hasPremiumSubscription = await this.subscriptionsRepository.exists({
-                where: {
-                    user: { id: studentId },
-                    status: SubscriptionStatus.ACTIVE,
-                    plan: SubscriptionPlan.PREMIUM,
-                },
-            });
-            if (!hasPremiumSubscription) {
-                throw new ForbiddenException('Necesitás una suscripción premium activa para enviar mensajes');
-            }
-        }
 
         const message = this.messagesRepository.create({ senderId, receiverId, content });
         return this.messagesRepository.save(message);
