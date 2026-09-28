@@ -7,23 +7,19 @@ import {
 } from 'typeorm';
 
 @Entity('messages')
-@Index('IDX_messages_sender_receiver_created', ['senderId', 'receiverId', 'createdAt'])
-@Index('IDX_messages_receiver_read_at', ['receiverId', 'readAt'])
+@Index('IDX_messages_conversation_created', ['conversationId', 'createdAt'])
 export class Message {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
+    @Column({ name: 'conversation_id', type: 'uuid' })
+    conversationId: string;
+
     @Column({ name: 'sender_id', type: 'uuid' })
     senderId: string;
 
-    @Column({ name: 'receiver_id', type: 'uuid' })
-    receiverId: string;
-
     @Column({ type: 'text' })
     content: string;
-
-    @Column({ name: 'read_at', type: 'timestamptz', nullable: true })
-    readAt: Date | null;
 
     @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
