@@ -20,6 +20,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   canActivate(context: ExecutionContext) {
+    // Los guards HTTP no aplican a WebSockets. El ChatGateway autentica el
+    // JWT en el handshake (ver chat.gateway.ts, handleConnection).
+    if (context.getType() !== 'http') {
+      return true;
+    }
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
