@@ -18,13 +18,13 @@
     ],
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
     "strictPropertyInitialization": false
   },
   "include": [
-    "src"
+    "src",
+    "test"
   ]
 }
