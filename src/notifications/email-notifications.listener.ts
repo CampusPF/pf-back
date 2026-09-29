@@ -8,6 +8,7 @@ import {
     CourseCompletedEvent,
     CertificateIssuedEvent,
     CourseBlockedByAdminEvent,
+    RoleChangedEvent
 } from '../events';
 import { EmailNotificationsService } from './email-notifications.service';
 
@@ -75,6 +76,13 @@ export class EmailNotificationsListener {
                 event.courseTitle,
                 event.courseUpdatedAt,
             ),
+        );
+    }
+
+    @OnEvent(EVENTS.ROLE_CHANGED, { async: true })
+    async onRoleChanged(event: RoleChangedEvent): Promise<void> {
+        await this.safely('cambio de rol', event.userId, () =>
+            this.emails.sendRoleChanged(event.userId, event.previousRole, event.newRole),
         );
     }
     /**
