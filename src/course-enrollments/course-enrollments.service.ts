@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { CourseEnrollment } from './entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -152,6 +152,26 @@ export class CourseEnrollmentsService {
   async hasActiveEnrollment(studentId: string, courseId: string): Promise<boolean> {
     const count = await this.enrollmentsRepository.count({
       where: { student: { id: studentId }, course: { id: courseId }, isActive: true },
+    });
+    return count > 0;
+  }
+
+  /**
+   * ¿El alumno TERMINÓ el curso? `completedAt` lo decide
+   * CourseProgressionService.settleCourseCompletion: lecciones al 100% y todos
+   * los checkpoints aprobados. Vuelve a null si el curso deja de estar
+   * completo, así que esto es el estado de hoy, no "alguna vez lo terminó".
+   *
+   * Lo usan las reseñas: sólo reseña quien terminó el curso.
+   */
+  async hasCompletedCourse(studentId: string, courseId: string): Promise<boolean> {
+    const count = await this.enrollmentsRepository.count({
+      where: {
+        student: { id: studentId },
+        course: { id: courseId },
+        isActive: true,
+        completedAt: Not(IsNull()),
+      },
     });
     return count > 0;
   }

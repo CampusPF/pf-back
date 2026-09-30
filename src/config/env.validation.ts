@@ -115,6 +115,11 @@ export const envValidationSchema = Joi.object({
   // Mensajes por día al tutor en el plan gratis (Premium = ilimitado).
   AI_FREE_DAILY_LIMIT: Joi.number().integer().positive().default(20),
 
+  // --- Moderación de reseñas ---
+  // Reusa GROQ_API_KEY. Sin key, sólo corre la lista local de groserías
+  // (src/moderation/profanity-filter.ts); con key, además la IA.
+  MODERATION_MODEL: Joi.string().default('openai/gpt-oss-safeguard-20b'),
+
   // NOTA: el proyecto arrancó con notas para Mercado Pago pero el equipo fue
   // con Stripe (ver bloque STRIPE_* arriba). Las variables MP_* quedaron sin
   // uso y no se validan.

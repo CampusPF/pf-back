@@ -6,6 +6,7 @@ import { CourseReviewsService } from './course-reviews.service';
 import { CourseReviewsController } from './course-reviews.controller';
 import { CourseEnrollmentsModule } from '../course-enrollments/course-enrollments.module';
 import { AuthModule } from '../auth/auth.module';
+import { ModerationModule } from '../moderation/moderation.module';
 
 /**
  * Dueño de la tabla course_reviews y de sus reglas (quién puede reseñar).
@@ -19,6 +20,8 @@ import { AuthModule } from '../auth/auth.module';
     // el acceso a lecciones, no una segunda consulta armada a mano.
     CourseEnrollmentsModule,
     AuthModule,
+    // Los comentarios pasan por moderación antes de guardarse.
+    ModerationModule,
   ],
   controllers: [CourseReviewsController],
   providers: [CourseReviewsService],

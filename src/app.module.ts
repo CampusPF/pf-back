@@ -35,6 +35,7 @@ import { QuizzesModule } from './quizzes/quizzes.module';
 import { CourseProgressionModule } from './course-progression/course-progression.module';
 import { AchievementsModule } from './achievements/achievements.module';
 import { GamificationModule } from './gamification/gamification.module';
+import { AdminStatsModule } from './admin-stats/admin-stats.module';
 import { CategoriesService } from './categories/categories.service';
 
 
@@ -125,6 +126,8 @@ import { CategoriesService } from './categories/categories.service';
     GamificationModule,
     AchievementsModule,
     CertificatesModule,
+    // Métricas agregadas del panel de administración.
+    AdminStatsModule,
   ],
   controllers: [AppController],
   providers: [
