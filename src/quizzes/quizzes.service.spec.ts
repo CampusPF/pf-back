@@ -85,7 +85,7 @@ function makeService() {
     const progression = {
         assertCanOpen: jest.fn(async () => undefined),
         assertCanSubmit: jest.fn(async () => undefined),
-        attemptsFor: jest.fn(async () => ({ maxAttempts: 2, attemptsLeft: 2, passed: false })),
+        attemptsFor: jest.fn(async () => ({ passed: false, lastAttempt: null })),
         // Aprobar un checkpoint puede terminar el curso; su regla se testea en
         // course-progression.service.spec.ts.
         settleCourseCompletion: jest.fn(async () => undefined),
@@ -138,25 +138,57 @@ describe('QuizzesService.findForStudent', () => {
 
     it('respeta el contrato del front', async () => {
         const { service } = makeService();
-        const quiz = await service.findForStudent(QUIZ.id, STUDENT);
+        // Preguntas y opciones vienen mezcladas. Con random() casi 1,
+        // Fisher-Yates cambia cada elemento consigo mismo: queda el orden
+        // original y el contrato se puede comparar exacto.
+        const random = jest.spyOn(Math, 'random').mockReturnValue(0.999);
 
-        expect(quiz).toEqual({
-            id: QUIZ.id,
-            courseId: COURSE.id,
-            moduleId: 'module-1',
-            moduleOrder: 2,
-            title: QUIZ.title,
-            passingScore: 70,
-            maxAttempts: 2,
-            attemptsLeft: 2,
-            passed: false,
-            canAttempt: true,
-            questions: [
-                { id: 'q1', text: '¿Pregunta 1?', options: [{ id: 'q1-a', text: 'A1' }, { id: 'q1-b', text: 'B1' }] },
-                { id: 'q2', text: '¿Pregunta 2?', options: [{ id: 'q2-a', text: 'A2' }, { id: 'q2-b', text: 'B2' }] },
-                { id: 'q3', text: '¿Pregunta 3?', options: [{ id: 'q3-a', text: 'A3' }, { id: 'q3-b', text: 'B3' }] },
-            ],
-        });
+        try {
+            const quiz = await service.findForStudent(QUIZ.id, STUDENT);
+
+            expect(quiz).toEqual({
+                id: QUIZ.id,
+                courseId: COURSE.id,
+                moduleId: 'module-1',
+                moduleOrder: 2,
+                title: QUIZ.title,
+                passingScore: 70,
+                passed: false,
+                lastAttempt: null,
+                questions: [
+                    { id: 'q1', text: '¿Pregunta 1?', options: [{ id: 'q1-a', text: 'A1' }, { id: 'q1-b', text: 'B1' }] },
+                    { id: 'q2', text: '¿Pregunta 2?', options: [{ id: 'q2-a', text: 'A2' }, { id: 'q2-b', text: 'B2' }] },
+                    { id: 'q3', text: '¿Pregunta 3?', options: [{ id: 'q3-a', text: 'A3' }, { id: 'q3-b', text: 'B3' }] },
+                ],
+            });
+        } finally {
+            random.mockRestore();
+        }
+    });
+
+    it('mezcla el orden de las preguntas y de sus opciones en cada apertura', async () => {
+        const { service } = makeService();
+        const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+        try {
+            // Con random() = 0, Fisher-Yates rota: [q1, q2, q3] → [q2, q3, q1],
+            // y con dos opciones las invierte: [a, b] → [b, a].
+            const quiz = await service.findForStudent(QUIZ.id, STUDENT);
+            expect(quiz.questions.map((q) => q.id)).toEqual(['q2', 'q3', 'q1']);
+            expect(quiz.questions[0].options.map((o) => o.id)).toEqual(['q2-b', 'q2-a']);
+        } finally {
+            random.mockRestore();
+        }
+    });
+
+    it('devuelve el último intento como nota vigente', async () => {
+        const { service, progression } = makeService();
+        const lastAttempt = { score: 50, passed: false, createdAt: new Date('2026-09-01') };
+        progression.attemptsFor.mockResolvedValueOnce({ passed: true, lastAttempt } as never);
+
+        const quiz = await service.findForStudent(QUIZ.id, STUDENT);
+        expect(quiz.passed).toBe(true);
+        expect(quiz.lastAttempt).toEqual(lastAttempt);
     });
 
     it('pide las preguntas ordenadas por order_index', async () => {
