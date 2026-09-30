@@ -106,6 +106,13 @@ export class AuthService {
         const user = await this.usersService.findByEmail(dto.email);
         if (!user) throw new UnauthorizedException('Credenciales inválidas');
 
+        // Mismo mensaje que credenciales inválidas: no delata que la cuenta
+        // existe pero fue dada de baja (o suspendida). Va antes del bcrypt.compare
+        // para no gastarlo en una cuenta que de entrada no puede entrar.
+        if (user.status !== UserStatus.ACTIVE) {
+            throw new UnauthorizedException('Credenciales inválidas');
+        }
+
         if (!user.passwordHash) {
             throw new UnauthorizedException(
                 'Esta cuenta inicia sesión con Google. Usá el botón "Continuar con Google".',
@@ -148,6 +155,14 @@ export class AuthService {
         // flow === 'login': "Continuar con Google" desde /login.
         if (!user) {
             // Desde el login NO se crean cuentas: se lo manda a registrarse.
+            throw new UnauthorizedException(
+                'No existe una cuenta con este email. Registrate primero.',
+            );
+        }
+
+        // Mismo mensaje que "no existe": no delata que la cuenta existe pero
+        // fue dada de baja (o suspendida).
+        if (user.status !== UserStatus.ACTIVE) {
             throw new UnauthorizedException(
                 'No existe una cuenta con este email. Registrate primero.',
             );

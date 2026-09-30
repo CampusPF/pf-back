@@ -313,4 +313,38 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
     const all = await usersService.findAll();
     expect(all.filter((u) => u.email === 'raceform@test.com')).toHaveLength(1);
   });
+
+  // Bug real detectado en producción: "eliminar" a alguien desde el panel de
+  // admin (soft-delete, UsersService.remove) no le sacaba el acceso — ni acá
+  // ni en JwtStrategy.validate() se miraba `status`. Ambos deben rechazar,
+  // y con el MISMO mensaje que credenciales inválidas / cuenta inexistente:
+  // no hay que delatar que la cuenta existe pero fue dada de baja.
+  describe('cuenta dada de baja (status !== ACTIVE)', () => {
+    it('login por form rechaza con el mismo mensaje que credenciales inválidas', async () => {
+      const { user } = await authService.register(
+        registerPayload({ name: 'Baja Form', email: 'bajaform@test.com' }) as any,
+      );
+      await usersService.remove(user.id);
+
+      await expect(
+        authService.login({ email: 'bajaform@test.com', password: 'SecurePass123' } as any),
+      ).rejects.toThrow('Credenciales inválidas');
+    });
+
+    it('login por Google rechaza con el mismo mensaje que "no existe cuenta"', async () => {
+      const { user } = await authService.loginWithGoogle(
+        { googleId: 'google-id-baja', email: 'bajagoogle@test.com', name: 'Baja Google' },
+        'register',
+      );
+      await usersService.remove(user.id);
+
+      await expect(
+        authService.loginWithGoogle({
+          googleId: 'google-id-baja',
+          email: 'bajagoogle@test.com',
+          name: 'Baja Google',
+        }),
+      ).rejects.toThrow('No existe una cuenta con este email');
+    });
+  });
 });
