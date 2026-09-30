@@ -14,10 +14,10 @@ import { Conversation } from './entities/conversation.entity';
 import { Message, MessageRole } from './entities/message.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
 import { User, UserRole } from '../users/entities/user.entity';
-import { Subscription, SubscriptionPlan, SubscriptionStatus } from '../subscriptions/entities/subscription.entity';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
 import { LessonProgress } from '../lesson-progress/entities/lesson-progress.entity';
 import { LessonsAccessService } from '../lessons/lessons-access.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { AI_PROVIDER } from './providers/ai-provider.interface';
 import type { AiChatMessage, AiProvider } from './providers/ai-provider.interface';
@@ -59,8 +59,7 @@ export class AiTutorService {
         private readonly lessonsRepository: Repository<Lesson>,
         @InjectRepository(User)
         private readonly usersRepository: Repository<User>,
-        @InjectRepository(Subscription)
-        private readonly subscriptionsRepository: Repository<Subscription>,
+        private readonly subscriptionsService: SubscriptionsService,
         @InjectRepository(CourseEnrollment)
         private readonly enrollmentsRepository: Repository<CourseEnrollment>,
         @InjectRepository(LessonProgress)
@@ -386,23 +385,17 @@ export class AiTutorService {
         }
     }
 
-    /** Premium, docentes y admins: sin límite. Para el docente es su beneficio del tutor. */
+    /**
+     * Premium, docentes y admins: sin límite. Para el docente es su
+     * beneficio del tutor. `hasActiveSubscription` ya contempla una
+     * suscripción cancelada pero todavía dentro del período pago (ver
+     * SubscriptionsService) — no se reimplementa esa regla acá.
+     */
     private async hasUnlimitedUsage(userId: string): Promise<boolean> {
         const user = await this.usersRepository.findOne({ where: { id: userId }, select: { id: true, role: true } });
         if (user?.role === UserRole.TEACHER || user?.role === UserRole.ADMIN) return true;
 
-        const subscription = await this.subscriptionsRepository.findOne({
-            where: { user: { id: userId } },
-            order: { createdAt: 'DESC' },
-        });
-
-        if (!subscription) return false;
-
-        const isActive = subscription.status === SubscriptionStatus.ACTIVE;
-        const isNotExpired = subscription.endDate.getTime() >= Date.now();
-        const isPremium = subscription.plan === SubscriptionPlan.PREMIUM;
-
-        return isActive && isNotExpired && isPremium;
+        return this.subscriptionsService.hasActiveSubscription(userId);
     }
 
     private getTodayRange(): { startOfDay: Date; endOfDay: Date } {
