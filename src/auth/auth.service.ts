@@ -23,6 +23,7 @@ import { MailService } from '../mail/mail.service';
 import { FRONT_ROUTES, frontendUrl } from '../mail/mail-templates';
 import { MailTemplate } from '../mail/templates';
 import { EVENTS, UserRegisteredEvent } from '../events';
+import { AccountDisabledException } from './account-disabled.exception';
 
 /** Código de Postgres para "unique_violation". */
 const POSTGRES_UNIQUE_VIOLATION = '23505';
@@ -68,7 +69,13 @@ export class AuthService {
 
     async register(dto: RegisterDto) {
         const existing = await this.usersService.findByEmail(dto.email);
-        if (existing) throw new ConflictException('El email ya está registrado');
+        if (existing) {
+            // Si la cuenta fue dada de baja, decirlo: "ya existe, iniciá
+            // sesión" la mandaría a un login que también la rechaza. No
+            // filtra nada nuevo: "ya existe" ya revelaba que el email estaba.
+            if (existing.status !== UserStatus.ACTIVE) throw new AccountDisabledException();
+            throw new ConflictException('El email ya está registrado');
+        }
 
         try {
             const user = await this.usersService.create({
@@ -115,6 +122,11 @@ export class AuthService {
         const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
         if (!passwordMatches) throw new UnauthorizedException('Credenciales inválidas');
 
+        // DESPUÉS de validar la contraseña, a propósito: el aviso de baja lo
+        // ve sólo quien demostró ser el dueño de la cuenta. Alguien probando
+        // emails al azar sigue recibiendo "Credenciales inválidas".
+        if (user.status !== UserStatus.ACTIVE) throw new AccountDisabledException();
+
         return this.buildToken(user);
     }
 
@@ -135,6 +147,9 @@ export class AuthService {
         if (flow === 'register') {
             // "Continuar con Google" desde /register.
             if (user) {
+                // Dada de baja: decirlo, no mandarla a un login que también
+                // la va a rechazar.
+                if (user.status !== UserStatus.ACTIVE) throw new AccountDisabledException();
                 // Ya hay una cuenta con este email (con o sin Google
                 // vinculado): no se registra de nuevo, se lo manda al login.
                 throw new ConflictException(
@@ -152,6 +167,9 @@ export class AuthService {
                 'No existe una cuenta con este email. Registrate primero.',
             );
         }
+
+        // Google ya probó que es el dueño del email: se le puede decir.
+        if (user.status !== UserStatus.ACTIVE) throw new AccountDisabledException();
 
         if (!user.googleId) {
             // Ya existía con email/password normal: vinculamos la cuenta de
@@ -266,7 +284,9 @@ export class AuthService {
     async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
         const user = await this.usersService.findByEmail(dto.email);
 
-        if (user) {
+        // Una cuenta dada de baja no recibe el mail: resetear la contraseña
+        // no le devuelve el acceso. La respuesta es la misma de siempre.
+        if (user && user.status === UserStatus.ACTIVE) {
             const token = this.resetTokenService.generate(
                 user.id,
                 user.passwordHash ?? null,
@@ -314,7 +334,12 @@ export class AuthService {
 
         // Mismo mensaje para "el usuario ya no existe" y "el token ya se usó":
         // no hay razón para distinguirlos de cara al cliente.
-        if (!user || !this.resetTokenService.matchesCurrentPassword(fp, currentHash)) {
+        // Un link pedido ANTES de la baja tampoco sirve después.
+        if (
+            !user ||
+            user.status !== UserStatus.ACTIVE ||
+            !this.resetTokenService.matchesCurrentPassword(fp, currentHash)
+        ) {
             throw new BadRequestException(
                 'Este link ya fue usado o ya no es válido. Pedí uno nuevo.',
             );

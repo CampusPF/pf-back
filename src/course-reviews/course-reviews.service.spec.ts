@@ -1,20 +1,27 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { CourseReviewsService, roundRating } from './course-reviews.service';
 import { CourseReview } from './entities/course-review.entity';
 import { Course } from '../courses/entities/course.entity';
 import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
+import { ModerationService } from '../moderation/moderation.service';
 
 /**
- * Lo que importa blindar son las reglas de quién puede reseñar (inscripto, no
- * instructor) y la aritmética del resumen. Repositorios mockeados: no hace
+ * Lo que importa blindar son las reglas de quién puede reseñar (inscripto, con
+ * el curso terminado y no instructor) y la aritmética del resumen. Repositorios mockeados: no hace
  * falta base para verificar la regla.
  */
 describe('CourseReviewsService', () => {
   let service: CourseReviewsService;
   let courseFindOne: jest.Mock;
   let hasActiveEnrollment: jest.Mock;
+  let hasCompletedCourse: jest.Mock;
+  let assertPublishable: jest.Mock;
   let upsert: jest.Mock;
   let reviewFindOne: jest.Mock;
   let getRawMany: jest.Mock;
@@ -36,6 +43,8 @@ describe('CourseReviewsService', () => {
   beforeEach(async () => {
     courseFindOne = jest.fn().mockResolvedValue({ id: COURSE_ID, instructor: { id: INSTRUCTOR_ID } });
     hasActiveEnrollment = jest.fn().mockResolvedValue(true);
+    hasCompletedCourse = jest.fn().mockResolvedValue(true);
+    assertPublishable = jest.fn().mockResolvedValue(undefined);
     upsert = jest.fn().mockResolvedValue(undefined);
     reviewFindOne = jest.fn().mockResolvedValue(null);
     getRawMany = jest.fn().mockResolvedValue([]);
@@ -64,7 +73,8 @@ describe('CourseReviewsService', () => {
           },
         },
         { provide: getRepositoryToken(Course), useValue: { findOne: courseFindOne } },
-        { provide: CourseEnrollmentsService, useValue: { hasActiveEnrollment } },
+        { provide: CourseEnrollmentsService, useValue: { hasActiveEnrollment, hasCompletedCourse } },
+        { provide: ModerationService, useValue: { assertPublishable } },
       ],
     }).compile();
 
@@ -72,7 +82,7 @@ describe('CourseReviewsService', () => {
   });
 
   describe('upsertMine', () => {
-    it('guarda la reseña de un alumno inscripto y no expone su email', async () => {
+    it('guarda la reseña de un alumno que terminó el curso y no expone su email', async () => {
       const view = await service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 4, comment: 'Bueno' });
 
       expect(upsert).toHaveBeenCalledWith(
@@ -84,6 +94,15 @@ describe('CourseReviewsService', () => {
 
     it('rechaza con 403 a quien no está inscripto', async () => {
       hasActiveEnrollment.mockResolvedValue(false);
+
+      await expect(service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 5 })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('rechaza con 403 a quien está inscripto pero no terminó el curso', async () => {
+      hasCompletedCourse.mockResolvedValue(false);
 
       await expect(service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 5 })).rejects.toBeInstanceOf(
         ForbiddenException,
@@ -103,9 +122,32 @@ describe('CourseReviewsService', () => {
       expect(upsert.mock.calls[0][0].comment).toBeNull();
     });
 
-    it('guarda cualquier comentario tal cual, sin moderarlo', async () => {
-      await service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 1, comment: '  cualquier cosa  ' });
-      expect(upsert.mock.calls[0][0].comment).toBe('cualquier cosa');
+    it('modera el comentario ya recortado y lo guarda si pasa', async () => {
+      await service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 1, comment: '  Muy flojo  ' });
+      expect(assertPublishable).toHaveBeenCalledWith('Muy flojo');
+      expect(upsert.mock.calls[0][0].comment).toBe('Muy flojo');
+    });
+
+    it('no guarda nada si la moderación rechaza el comentario', async () => {
+      assertPublishable.mockRejectedValue(new UnprocessableEntityException('ofensivo'));
+
+      await expect(
+        service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 1, comment: 'algo ofensivo' }),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+      expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('no llama a la moderación si no hay comentario (sólo puntaje)', async () => {
+      await service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 5, comment: '   ' });
+      expect(assertPublishable).not.toHaveBeenCalled();
+    });
+
+    it('no modera (ni gasta la IA) si el usuario no puede reseñar', async () => {
+      hasCompletedCourse.mockResolvedValue(false);
+      await expect(
+        service.upsertMine(COURSE_ID, STUDENT_ID, { rating: 1, comment: 'hola' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(assertPublishable).not.toHaveBeenCalled();
     });
 
     it('devuelve 404 si el curso no existe o está inactivo', async () => {
@@ -117,11 +159,20 @@ describe('CourseReviewsService', () => {
   });
 
   describe('findMine', () => {
-    it('informa el motivo cuando no puede reseñar', async () => {
+    it('informa el motivo cuando no está inscripto', async () => {
       hasActiveEnrollment.mockResolvedValue(false);
       await expect(service.findMine(COURSE_ID, STUDENT_ID)).resolves.toEqual({
         canReview: false,
         reason: 'not_enrolled',
+        review: null,
+      });
+    });
+
+    it('informa not_completed cuando está inscripto pero no terminó el curso', async () => {
+      hasCompletedCourse.mockResolvedValue(false);
+      await expect(service.findMine(COURSE_ID, STUDENT_ID)).resolves.toEqual({
+        canReview: false,
+        reason: 'not_completed',
         review: null,
       });
     });

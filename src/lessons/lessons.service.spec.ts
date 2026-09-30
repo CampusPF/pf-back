@@ -11,6 +11,7 @@ import { LessonsService } from './lessons.service';
 function makeQueryBuilderMock(result: unknown) {
     const qb: any = {};
     qb.leftJoinAndSelect = jest.fn(() => qb);
+    qb.leftJoin = jest.fn(() => qb);
     qb.addSelect = jest.fn(() => qb);
     qb.where = jest.fn(() => qb);
     qb.getOne = jest.fn(async () => result);

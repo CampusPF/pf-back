@@ -1,12 +1,30 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UsersService } from './users.service';
+import { User } from './entities/user.entity';
+import { CloudinaryService } from '../file-upload/cloudinary.service';
 
 describe('UsersService', () => {
   let service: UsersService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [UsersService],
+      providers: [
+        UsersService,
+        {
+          provide: getRepositoryToken(User),
+          useValue: {},
+        },
+        {
+          provide: CloudinaryService,
+          useValue: {},
+        },
+        {
+          provide: EventEmitter2,
+          useValue: {},
+        },
+      ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
