@@ -32,9 +32,23 @@ import { CourseProgressionService } from '../course-progression/course-progressi
 const NOT_FOUND_MESSAGE = 'Checkpoint no encontrado';
 const UNANSWERED = 'Sin responder';
 
+/** Fisher-Yates sobre una copia: no toca el array original. */
+function shuffle<T>(items: T[]): T[] {
+    const result = [...items];
+    for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+}
+
 /**
  * Checkpoints (quiz multiple choice por módulo, o de fin de curso con
  * `moduleId` null).
+ *
+ * Se rinden sin límite de intentos, también los ya aprobados; la nota que se
+ * muestra es la del último intento, pero aprobar una vez alcanza para la
+ * progresión y el certificado.
  *
  * Un quiz es VIGENTE si tiene al menos una pregunta y no cuelga de un módulo
  * dado de baja. Sólo los vigentes se listan, se pueden rendir y cuentan para
@@ -82,16 +96,19 @@ export class QuizzesService {
             await this.assertEnrolled(actor.id, quiz.courseId);
             /* No alcanza con estar inscripto: hay que haber llegado hasta acá.
                Sin esto, el que tiene el id del quiz lo abre salteándose las
-               lecciones y los módulos anteriores.
-
-               Es el gate de ABRIR, no el de rendir: uno ya aprobado se puede
-               volver a ver, pero no volver a rendir (ver submitAttempt). */
+               lecciones y los módulos anteriores. */
             await this.progression.assertCanOpen(actor, quiz.courseId, quizId);
         }
 
+        // Se rinde sin límite: mezclar preguntas Y opciones en cada apertura
+        // evita que el reintento sea memorizar "la 3 era la B". La corrección
+        // no depende del orden (las respuestas viajan por questionId/optionId).
         return StudentQuizDto.from(
             quiz,
-            questions,
+            shuffle(questions).map((question) => ({
+                ...question,
+                options: shuffle(question.options),
+            })),
             await this.progression.attemptsFor(actor.id, quizId),
         );
     }
@@ -128,9 +145,8 @@ export class QuizzesService {
         if (!this.isActive(quiz, questions.length)) throw new NotFoundException(NOT_FOUND_MESSAGE);
         await this.assertEnrolled(userId, quiz.courseId);
 
-        /* Se vuelve a chequear al enviar, no sólo al abrir: entre que se cargó
-           la pantalla y se mandan las respuestas pueden haberse agotado los
-           intentos —o haberse aprobado el checkpoint— en otra pestaña. */
+        /* Se vuelve a chequear al enviar, no sólo al abrir: el que tiene el id
+           del quiz podría mandar un intento sin haber pasado por el GET. */
         await this.progression.assertCanSubmit(actor, quiz.courseId, quizId);
 
         const selectedByQuestion = this.validateAnswers(questions, dto);
@@ -189,18 +205,12 @@ export class QuizzesService {
                 });
         }
 
-        // Se relee DESPUÉS de guardar: es el número con este intento ya
-        // descontado, que es el que la pantalla necesita para decidir si
-        // todavía ofrece reintentar.
-        const { attemptsLeft } = await this.progression.attemptsFor(userId, quizId);
-
         return {
             score,
             passed,
             passingScore: quiz.passingScore,
             correctCount,
             totalQuestions,
-            attemptsLeft,
             details,
         };
     }

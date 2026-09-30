@@ -1,8 +1,5 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
-import {
-    CourseProgressionService,
-    MAX_ATTEMPTS_PER_QUIZ,
-} from './course-progression.service';
+import { ForbiddenException } from '@nestjs/common';
+import { CourseProgressionService } from './course-progression.service';
 import { UserRole } from '../users/entities/user.entity';
 import { EVENTS } from '../events';
 
@@ -88,6 +85,7 @@ function makeService({
     };
     const attemptsRepository = {
         count: jest.fn(async () => 0),
+        findOne: jest.fn(async () => null),
         find: jest.fn(async () => passed.map((quizId) => ({ quizId }))),
         createQueryBuilder: jest.fn(() => ({
             select: jest.fn().mockReturnThis(),
@@ -221,55 +219,21 @@ describe('CourseProgressionService — checkpoint del módulo', () => {
     });
 });
 
-describe('CourseProgressionService — límite de intentos', () => {
-    it(`deja rendir mientras queden intentos (máximo ${MAX_ATTEMPTS_PER_QUIZ})`, async () => {
+/* Sin límite de intentos: una vez habilitado, se rinde las veces que quiera,
+   aunque ya lo haya aprobado. Rendirlo de nuevo no le quita lo ganado. */
+describe('CourseProgressionService — reintentos sin límite', () => {
+    it('deja rendir aunque haya usado muchos intentos sin aprobar', async () => {
         const { service } = makeService({
             completed: ['l1', 'l2'],
-            attempts: { 'quiz-1': MAX_ATTEMPTS_PER_QUIZ - 1 },
+            attempts: { 'quiz-1': 10 },
         });
 
         await expect(
-            service.assertCanOpen(STUDENT, COURSE_ID, 'quiz-1'),
+            service.assertCanSubmit(STUDENT, COURSE_ID, 'quiz-1'),
         ).resolves.toBeUndefined();
     });
 
-    it('agotados los intentos sin aprobar → 403', async () => {
-        const { service } = makeService({
-            completed: ['l1', 'l2'],
-            attempts: { 'quiz-1': MAX_ATTEMPTS_PER_QUIZ },
-        });
-
-        await expect(
-            service.assertCanOpen(STUDENT, COURSE_ID, 'quiz-1'),
-        ).rejects.toThrow(/agotaste/i);
-    });
-
-    it('ya aprobado, los intentos agotados no lo bloquean', async () => {
-        const { service } = makeService({
-            completed: ['l1', 'l2'],
-            passed: ['quiz-1'],
-            attempts: { 'quiz-1': MAX_ATTEMPTS_PER_QUIZ + 3 },
-        });
-
-        await expect(
-            service.assertCanOpen(STUDENT, COURSE_ID, 'quiz-1'),
-        ).resolves.toBeUndefined();
-    });
-
-    it('informa cuántos intentos quedan', async () => {
-        const { service } = makeService({ attempts: { 'quiz-1': 1 } });
-        const { modules } = await service.getProgression(STUDENT, COURSE_ID);
-
-        expect(modules[0].attemptsUsed).toBe(1);
-        expect(modules[0].attemptsLeft).toBe(MAX_ATTEMPTS_PER_QUIZ - 1);
-    });
-});
-
-/* Abrir y rendir son dos permisos distintos. El checkpoint aprobado se puede
-   volver a MIRAR, pero no volver a RENDIR: rendirlo de nuevo gastaba un
-   intento sobre algo que ya estaba aprobado. */
-describe('CourseProgressionService.assertCanSubmit', () => {
-    it('un checkpoint ya aprobado NO se puede volver a rendir', async () => {
+    it('un checkpoint ya aprobado se puede volver a rendir', async () => {
         const { service } = makeService({
             completed: ['l1', 'l2'],
             passed: ['quiz-1'],
@@ -278,22 +242,10 @@ describe('CourseProgressionService.assertCanSubmit', () => {
 
         await expect(
             service.assertCanSubmit(STUDENT, COURSE_ID, 'quiz-1'),
-        ).rejects.toBeInstanceOf(ConflictException);
-    });
-
-    it('pero sí se puede abrir para repasarlo', async () => {
-        const { service } = makeService({
-            completed: ['l1', 'l2'],
-            passed: ['quiz-1'],
-            attempts: { 'quiz-1': 1 },
-        });
-
-        await expect(
-            service.assertCanOpen(STUDENT, COURSE_ID, 'quiz-1'),
         ).resolves.toBeUndefined();
     });
 
-    it('el checkpoint final aprobado tampoco se vuelve a rendir', async () => {
+    it('el checkpoint final aprobado también se vuelve a rendir', async () => {
         const { service } = makeService({
             completed: ['l1', 'l2', 'l3', 'l4'],
             passed: ['quiz-1', 'quiz-2', 'quiz-final'],
@@ -301,54 +253,53 @@ describe('CourseProgressionService.assertCanSubmit', () => {
 
         await expect(
             service.assertCanSubmit(STUDENT, COURSE_ID, 'quiz-final'),
-        ).rejects.toBeInstanceOf(ConflictException);
-    });
-
-    it('sin aprobar y con intentos, deja enviar', async () => {
-        const { service } = makeService({ completed: ['l1', 'l2'] });
-
-        await expect(
-            service.assertCanSubmit(STUDENT, COURSE_ID, 'quiz-1'),
         ).resolves.toBeUndefined();
     });
 
-    it('sin aprobar y sin intentos, no deja enviar', async () => {
-        const { service } = makeService({
-            completed: ['l1', 'l2'],
-            attempts: { 'quiz-1': MAX_ATTEMPTS_PER_QUIZ },
-        });
+    it('rendir sigue exigiendo haber llegado: con lecciones pendientes → 403', async () => {
+        const { service } = makeService({ completed: ['l1'] });
 
         await expect(
             service.assertCanSubmit(STUDENT, COURSE_ID, 'quiz-1'),
-        ).rejects.toThrow(/agotaste/i);
+        ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('informa cuántos intentos usó', async () => {
+        const { service } = makeService({ attempts: { 'quiz-1': 3 } });
+        const { modules } = await service.getProgression(STUDENT, COURSE_ID);
+
+        expect(modules[0].attemptsUsed).toBe(3);
     });
 });
 
 describe('CourseProgressionService.attemptsFor', () => {
-    it('cuenta intentos usados y si ya aprobó', async () => {
+    it('devuelve el último intento y si lo aprobó alguna vez', async () => {
         const { service, attemptsRepository } = makeService();
-        attemptsRepository.count
-            .mockResolvedValueOnce(1 as never) // usados
-            .mockResolvedValueOnce(1 as never); // aprobados
+        const createdAt = new Date('2026-09-01');
+        attemptsRepository.findOne.mockResolvedValueOnce({
+            score: 40,
+            passed: false,
+            createdAt,
+        } as never);
+        attemptsRepository.count.mockResolvedValueOnce(1 as never); // aprobados
 
+        // Aprobó antes y el último salió mal: sigue aprobado, la nota es la última.
         await expect(service.attemptsFor(STUDENT.id, 'quiz-1')).resolves.toEqual({
-            maxAttempts: MAX_ATTEMPTS_PER_QUIZ,
-            attemptsLeft: MAX_ATTEMPTS_PER_QUIZ - 1,
             passed: true,
+            lastAttempt: { score: 40, passed: false, createdAt },
         });
     });
 
-    it('nunca devuelve intentos negativos', async () => {
-        const { service, attemptsRepository } = makeService();
-        attemptsRepository.count
-            .mockResolvedValueOnce((MAX_ATTEMPTS_PER_QUIZ + 5) as never)
-            .mockResolvedValueOnce(0 as never);
+    it('sin intentos, lastAttempt es null', async () => {
+        const { service } = makeService();
 
-        const result = await service.attemptsFor(STUDENT.id, 'quiz-1');
-        expect(result.attemptsLeft).toBe(0);
-        expect(result.passed).toBe(false);
+        await expect(service.attemptsFor(STUDENT.id, 'quiz-1')).resolves.toEqual({
+            passed: false,
+            lastAttempt: null,
+        });
     });
 });
+
 
 describe('CourseProgressionService — checkpoint final', () => {
     it('cerrado mientras quede un módulo sin completar', async () => {

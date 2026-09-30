@@ -33,6 +33,17 @@ export class StudentQuizQuestionDto {
     options: StudentQuizOptionDto[];
 }
 
+export class LastAttemptDto {
+    @ApiProperty({ example: 80, description: 'Porcentaje 0-100' })
+    score: number;
+
+    @ApiProperty()
+    passed: boolean;
+
+    @ApiProperty()
+    createdAt: Date;
+}
+
 export class StudentQuizDto {
     @ApiProperty()
     id: string;
@@ -52,28 +63,29 @@ export class StudentQuizDto {
     @ApiProperty({ example: 70 })
     passingScore: number;
 
-    @ApiProperty({ description: 'Cuántas veces se puede rendir en total' })
-    maxAttempts: number;
-
-    @ApiProperty({ description: 'Intentos que le quedan al alumno antes de agotarlo' })
-    attemptsLeft: number;
-
-    @ApiProperty({ description: 'Ya lo aprobó. Puede verlo, pero no volver a rendirlo.' })
+    @ApiProperty({
+        description:
+            'Lo aprobó alguna vez. Queda aprobado aunque un reintento posterior salga mal.',
+    })
     passed: boolean;
 
     @ApiProperty({
-        description:
-            'Puede rendirlo ahora. false si ya lo aprobó o si agotó los intentos: la UI no debe ofrecer empezar.',
+        type: LastAttemptDto,
+        nullable: true,
+        description: 'Su último intento (la nota vigente). null si nunca lo rindió.',
     })
-    canAttempt: boolean;
+    lastAttempt: LastAttemptDto | null;
 
-    @ApiProperty({ type: [StudentQuizQuestionDto] })
+    @ApiProperty({
+        type: [StudentQuizQuestionDto],
+        description: 'En orden aleatorio: cambia cada vez que se pide el checkpoint.',
+    })
     questions: StudentQuizQuestionDto[];
 
     static from(
         quiz: Quiz,
         questions: QuestionWithOptions[],
-        attempts: { maxAttempts: number; attemptsLeft: number; passed: boolean },
+        attempts: { passed: boolean; lastAttempt: LastAttemptDto | null },
     ): StudentQuizDto {
         return {
             id: quiz.id,
@@ -82,12 +94,8 @@ export class StudentQuizDto {
             moduleOrder: quiz.module?.order ?? null,
             title: quiz.title,
             passingScore: quiz.passingScore,
-            maxAttempts: attempts.maxAttempts,
-            attemptsLeft: attempts.attemptsLeft,
             passed: attempts.passed,
-            // Aprobado es estado final: no se vuelve a rendir aunque sobren
-            // intentos. Y sin intentos tampoco, hasta que el docente habilite.
-            canAttempt: !attempts.passed && attempts.attemptsLeft > 0,
+            lastAttempt: attempts.lastAttempt,
             questions: questions.map((question) => ({
                 id: question.id,
                 text: question.text,

@@ -59,11 +59,11 @@ export class QuizzesController {
     }
 
     @Get('quizzes/:quizId')
-    @ApiOperation({ summary: 'Obtener un checkpoint para rendirlo (sin respuestas correctas)' })
+    @ApiOperation({ summary: 'Obtener un checkpoint para rendirlo (sin respuestas correctas, preguntas mezcladas)' })
     @ApiOkResponse({ type: StudentQuizDto })
     @ApiResponse({
         status: 403,
-        description: 'Te faltan lecciones, no llegaste a este módulo, o agotaste los intentos',
+        description: 'Te faltan lecciones o no llegaste a este módulo',
     })
     @ApiResponse({ status: 404, description: 'No existe o no estás inscripto en el curso' })
     findForStudent(
@@ -79,7 +79,7 @@ export class QuizzesController {
     @ApiResponse({ status: 400, description: 'Una respuesta no corresponde a este checkpoint' })
     @ApiResponse({
         status: 403,
-        description: 'Te faltan lecciones, no llegaste a este módulo, o agotaste los intentos',
+        description: 'Te faltan lecciones o no llegaste a este módulo',
     })
     @ApiResponse({ status: 404, description: 'No existe o no estás inscripto en el curso' })
     submitAttempt(

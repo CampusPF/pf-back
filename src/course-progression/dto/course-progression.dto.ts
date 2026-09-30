@@ -30,9 +30,6 @@ export class ModuleGateDto {
     @ApiProperty()
     attemptsUsed: number;
 
-    @ApiProperty({ description: 'Intentos que quedan antes de agotar el checkpoint' })
-    attemptsLeft: number;
-
     @ApiProperty({ description: 'Se puede entrar a las lecciones de este módulo' })
     lessonsUnlocked: boolean;
 
@@ -52,9 +49,6 @@ export class FinalCheckpointGateDto {
 
     @ApiProperty()
     attemptsUsed: number;
-
-    @ApiProperty()
-    attemptsLeft: number;
 
     @ApiProperty()
     unlocked: boolean;
