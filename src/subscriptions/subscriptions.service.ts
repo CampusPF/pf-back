@@ -4,8 +4,16 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, MoreThan, Repository } from 'typeorm';
 import { Subscription, SubscriptionPlan, SubscriptionStatus } from './entities/subscription.entity';
+
+/**
+ * Estados que TODAVÍA dan acceso Premium, además de tener que valer
+ * `endDate` en el futuro. `CANCELLED` está a propósito: cancelar apaga la
+ * renovación, no el acceso ya pago — el alumno lo conserva hasta que termine
+ * el período que ya pagó (ver `SubscriptionsService.cancel`).
+ */
+const GRANTS_ACCESS_STATUSES = [SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED];
 
 /** Precio de cada plan en centavos de USD (la unidad que espera Stripe). */
 export const PLAN_PRICES_IN_CENTS: Record<SubscriptionPlan, number> = {
@@ -31,10 +39,25 @@ export class SubscriptionsService {
     return PLAN_PRICES_IN_CENTS[plan];
   }
 
-  /** ¿El usuario ya tiene una suscripción ACTIVE? */
+  /**
+   * ¿El usuario tiene acceso Premium AHORA MISMO?
+   *
+   * No es sólo `status === ACTIVE`: una suscripción `CANCELLED` sigue dando
+   * acceso hasta `endDate` — cancelar sólo corta la renovación futura, el
+   * período ya pagado se cursa entero. Fuera de esa ventana (cancelada y
+   * vencida, o nunca vencida a mano por un cron que hoy no existe) no cuenta.
+   *
+   * Es EL gate: lo usan course-enrollments (inscripción a curso pago),
+   * lessons-access (contenido de lección), payments (bloquear un segundo
+   * alta mientras la actual siga vigente) y el tutor IA (uso ilimitado).
+   */
   async hasActiveSubscription(userId: string): Promise<boolean> {
     const count = await this.subscriptionsRepository.count({
-      where: { user: { id: userId }, status: SubscriptionStatus.ACTIVE },
+      where: {
+        user: { id: userId },
+        status: In(GRANTS_ACCESS_STATUSES),
+        endDate: MoreThan(new Date()),
+      },
     });
     return count > 0;
   }

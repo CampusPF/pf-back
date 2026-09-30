@@ -209,7 +209,11 @@ const PLATFORM_PEOPLE_SQL = `
     count(*) FILTER (WHERE u.status <> 'deleted' AND u.role = 'teacher')          AS teachers,
     count(*) FILTER (WHERE u.status <> 'deleted' AND ${inCurrent('u."createdAt"')})  AS new_current,
     count(*) FILTER (WHERE u.status <> 'deleted' AND ${inPrevious('u."createdAt"')}) AS new_previous,
-    (SELECT count(*) FROM subscriptions s WHERE s.status = 'active')              AS active_subscriptions
+    -- Misma regla que SubscriptionsService.hasActiveSubscription: ACTIVE o
+    -- CANCELLED todavía dentro de su período pago (cancelar apaga la
+    -- renovación, no el período ya pagado). Si cambia una, cambia la otra.
+    (SELECT count(*) FROM subscriptions s
+       WHERE s.status IN ('active', 'cancelled') AND s.end_date > now())        AS active_subscriptions
   FROM users u`;
 
 /** Para el docente, "alumno nuevo" = primera inscripción a alguno de SUS cursos. */

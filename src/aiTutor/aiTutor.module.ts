@@ -6,11 +6,11 @@ import { Conversation } from './entities/conversation.entity';
 import { Message } from './entities/message.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
 import { User } from '../users/entities/user.entity';
-import { Subscription } from '../subscriptions/entities/subscription.entity';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
 import { LessonProgress } from '../lesson-progress/entities/lesson-progress.entity';
 import { AuthModule } from '../auth/auth.module';
 import { LessonsModule } from '../lessons/lessons.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { AI_PROVIDER } from './providers/ai-provider.interface';
 import { GeminiProvider } from './providers/gemini.provider';
 import { GroqProvider } from './providers/groq.provider';
@@ -18,9 +18,10 @@ import { FailoverAiProvider } from './providers/failover-ai.provider';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Conversation, Message, Lesson, User, Subscription, CourseEnrollment, LessonProgress]),
+        TypeOrmModule.forFeature([Conversation, Message, Lesson, User, CourseEnrollment, LessonProgress]),
         AuthModule,
         LessonsModule, // LessonsAccessService: misma regla de acceso que el reproductor
+        SubscriptionsModule, // hasActiveSubscription: uso ilimitado del tutor en Premium
     ],
     controllers: [AiTutorController],
     providers: [
