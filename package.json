@@ -18,6 +18,7 @@
     "start:dev": "nest start --watch",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeders/run-seed.ts",
     "seed:achievements": "ts-node -r tsconfig-paths/register src/database/seeders/run-achievements-seed.ts",
+    "seed:quizzes": "ts-node -r tsconfig-paths/register src/database/seeders/run-quizzes-seed.ts",
     "db:migrate": "node scripts/db-migrate.js",
     "db:reset": "node scripts/db-reset.js",
     "stripe:replay": "node scripts/stripe-replay.js",
@@ -72,7 +73,8 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.4",
     "stripe": "^22.6.1",
-    "typeorm": "^1.1.1"
+    "typeorm": "^1.1.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
@@ -90,6 +92,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^7.0.0",
+    "@types/web-push": "^3.6.4",
     "jest": "^30.0.0",
     "oxlint": "^1.58.0",
     "prettier": "^3.4.2",

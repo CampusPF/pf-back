@@ -30,6 +30,7 @@ import { HealthModule } from './health/health.module';
 import { FileUploadModule } from './file-upload/file-upload.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ChatModule } from './chat/chat.module';
+import { PushModule } from './push/push.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
 import { CourseProgressionModule } from './course-progression/course-progression.module';
@@ -119,6 +120,7 @@ import { CategoriesService } from './categories/categories.service';
     // Mails de notificación (eventos + recordatorios semanales).
     NotificationsModule,
     ChatModule,
+    PushModule,
     QuizzesModule,
     // Progresión secuencial: qué módulo/checkpoint tiene abierto cada alumno.
     CourseProgressionModule,

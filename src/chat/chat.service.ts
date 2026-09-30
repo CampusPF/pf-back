@@ -69,6 +69,11 @@ export class ChatService {
         });
     }
 
+    async countUnreadFromSender(receiverId: string, senderId: string): Promise<number> {
+        return this.messagesRepository.count({
+            where: { receiverId, senderId, readAt: IsNull() },
+        });
+    }
     /**
      * Con quién puede chatear el usuario: los mismos pares que después
      * aceptan assertChatParticipants + assertSharedActiveCourse. Para un

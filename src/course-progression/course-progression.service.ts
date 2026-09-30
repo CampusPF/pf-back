@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -14,14 +14,15 @@ import { UserRole } from '../users/entities/user.entity';
 import { EVENTS, CourseCompletedEvent } from '../events';
 
 /**
- * Cuántas veces se puede rendir un mismo checkpoint.
- *
- * OJO: agotar los intentos sin aprobar deja al alumno sin poder terminar el
- * curso ni emitir el certificado, porque `hasPassedAllQuizzes` nunca va a dar
- * true. Hoy no hay forma de resetear un intento desde el panel del docente:
- * si se quiere permitir reintentar, hay que agregarla.
+ * El último intento de un alumno en un checkpoint: es la nota que se le
+ * muestra. Los checkpoints se pueden rendir sin límite, y cada intento
+ * reemplaza al anterior como "la nota vigente".
  */
-export const MAX_ATTEMPTS_PER_QUIZ = 2;
+export interface LastAttempt {
+    score: number;
+    passed: boolean;
+    createdAt: Date;
+}
 
 /** Quién pregunta. El rol importa: docente dueño y admin no se bloquean. */
 export interface ProgressionActor {
@@ -42,7 +43,6 @@ export interface ModuleGate {
     quizId: string | null;
     quizPassed: boolean;
     attemptsUsed: number;
-    attemptsLeft: number;
     /** Se puede entrar a las lecciones de este módulo. */
     lessonsUnlocked: boolean;
     /** Se puede rendir su checkpoint. */
@@ -56,7 +56,6 @@ export interface FinalCheckpointGate {
     quizId: string;
     passed: boolean;
     attemptsUsed: number;
-    attemptsLeft: number;
     unlocked: boolean;
     lockedReason: string | null;
 }
@@ -165,7 +164,6 @@ export class CourseProgressionService {
                 quizId: quiz?.id ?? null,
                 quizPassed,
                 attemptsUsed: used,
-                attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_QUIZ - used),
                 lessonsUnlocked,
                 checkpointUnlocked,
                 lockedReason: lessonsUnlocked
@@ -197,7 +195,6 @@ export class CourseProgressionService {
                     quizId: finalQuiz.id,
                     passed: passed.has(finalQuiz.id),
                     attemptsUsed: finalUsed,
-                    attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_QUIZ - finalUsed),
                     unlocked: bypassed || previousCleared,
                     lockedReason:
                         bypassed || previousCleared
@@ -233,9 +230,8 @@ export class CourseProgressionService {
      * Habilita ABRIR un checkpoint, o explica por qué no: sin esto, el que
      * conoce el id del quiz lo abre salteándose las lecciones.
      *
-     * Un checkpoint ya aprobado se puede abrir siempre (para repasarlo), aunque
-     * no queden intentos. Lo que no se puede es volver a RENDIRLO: eso lo
-     * corta `assertCanSubmit`.
+     * No hay límite de intentos: una vez habilitado, se rinde las veces que
+     * el alumno quiera. Uno ya aprobado se puede abrir (y rendir) siempre.
      */
     async assertCanOpen(
         actor: ProgressionActor,
@@ -262,7 +258,6 @@ export class CourseProgressionService {
                     `Te ${faltan === 1 ? 'falta 1 lección' : `faltan ${faltan} lecciones`} de este módulo para rendir el checkpoint`,
                 );
             }
-            this.assertAttemptsLeft(moduleGate.quizPassed, moduleGate.attemptsLeft);
             return;
         }
 
@@ -275,36 +270,24 @@ export class CourseProgressionService {
                     'Completá todos los módulos del curso para rendir el checkpoint final',
                 );
             }
-            this.assertAttemptsLeft(final.passed, final.attemptsLeft);
         }
     }
 
     /**
-     * Habilita ENVIAR un intento. Es más estricto que `assertCanOpen`: además
-     * de todo lo anterior, rechaza rendir un checkpoint YA APROBADO.
+     * Habilita ENVIAR un intento. Es el mismo gate que abrirlo: sin límite de
+     * intentos y con los ya aprobados abiertos, lo que se puede abrir se puede
+     * rendir. Se mantiene aparte porque se vuelve a chequear al enviar (entre
+     * que se cargó la pantalla y se envía puede haber cambiado la progresión).
      *
-     * Sin esto, el alumno que aprobaba podía volver a entrar, rehacerlo y
-     * gastar un intento que no necesitaba — y, si lo erraba, terminaba con el
-     * checkpoint aprobado pero sin intentos, o peor, rendido de nuevo sin
-     * necesidad. Aprobado es un estado final: no se vuelve a rendir.
+     * Rendir de nuevo uno aprobado NO lo desaprueba aunque salga mal: la nota
+     * que se muestra es la del último intento, pero lo ganado (módulos
+     * siguientes, XP, certificado) no se revoca.
      */
     async assertCanSubmit(
         actor: ProgressionActor,
         courseId: string,
         quizId: string,
     ): Promise<void> {
-        const progression = await this.getProgression(actor, courseId);
-        if (progression.bypassed) return;
-
-        const alreadyPassed =
-            progression.modules.some((m) => m.quizId === quizId && m.quizPassed) ||
-            (progression.finalCheckpoint?.quizId === quizId &&
-                progression.finalCheckpoint.passed);
-
-        if (alreadyPassed) {
-            throw new ConflictException('Ya aprobaste este checkpoint: no hace falta rendirlo de nuevo');
-        }
-
         await this.assertCanOpen(actor, courseId, quizId);
     }
 
@@ -355,37 +338,31 @@ export class CourseProgressionService {
     }
 
     /**
-     * Cuántos intentos le quedan a alguien en un checkpoint puntual.
+     * El estado de alguien en un checkpoint puntual: si lo aprobó alguna vez
+     * y cuál fue su último intento (la nota que se le muestra).
      *
      * Existe aparte de `getProgression` porque la pantalla del quiz necesita
-     * sólo este número y no todo el árbol del curso.
+     * sólo esto y no todo el árbol del curso.
      */
     async attemptsFor(
         userId: string,
         quizId: string,
-    ): Promise<{ maxAttempts: number; attemptsLeft: number; passed: boolean }> {
-        const [used, passedCount] = await Promise.all([
-            this.attemptsRepository.count({ where: { userId, quizId } }),
+    ): Promise<{ passed: boolean; lastAttempt: LastAttempt | null }> {
+        const [last, passedCount] = await Promise.all([
+            this.attemptsRepository.findOne({
+                where: { userId, quizId },
+                order: { createdAt: 'DESC' },
+                select: { score: true, passed: true, createdAt: true },
+            }),
             this.attemptsRepository.count({ where: { userId, quizId, passed: true } }),
         ]);
 
         return {
-            maxAttempts: MAX_ATTEMPTS_PER_QUIZ,
-            attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_QUIZ - used),
             passed: passedCount > 0,
+            lastAttempt: last
+                ? { score: last.score, passed: last.passed, createdAt: last.createdAt }
+                : null,
         };
-    }
-
-    /**
-     * Ya aprobado, los intentos no importan: se puede volver a entrar a ver el
-     * checkpoint. Lo que se corta es seguir rindiendo sin haber aprobado.
-     */
-    private assertAttemptsLeft(passed: boolean, attemptsLeft: number): void {
-        if (passed || attemptsLeft > 0) return;
-
-        throw new ForbiddenException(
-            `Agotaste los ${MAX_ATTEMPTS_PER_QUIZ} intentos de este checkpoint. Escribile al docente del curso.`,
-        );
     }
 
     /** ADMIN, o el docente que dicta el curso: no cursan, revisan. */

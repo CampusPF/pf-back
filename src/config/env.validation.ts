@@ -54,6 +54,11 @@ export const envValidationSchema = Joi.object({
   // Segundos de validez del access token (se pasa a signOptions.expiresIn).
   JWT_EXPIRES_IN: Joi.number().integer().positive().default(3600),
 
+  // --- Web Push (VAPID) ---
+  VAPID_PUBLIC_KEY: requiredInProd(Joi.string()),
+  VAPID_PRIVATE_KEY: requiredInProd(Joi.string()),
+  VAPID_SUBJECT: requiredInProd(Joi.string().uri()).default('mailto:ohverde@gmail.com'),
+
   // Secret de los tokens de "recuperar contraseña". TIENE que ser distinto de
   // JWT_SECRET: así un token de reseteo filtrado no sirve como sesión ni al
   // revés. Mismas exigencias que JWT_SECRET (32+ chars en producción).

@@ -7,6 +7,7 @@ import { CourseEnrollment } from '../course-enrollments/entities/course-enrollme
 import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
+import { PushModule } from '../push/push.module';
 
 /**
  * Chat entre alumnos (de cualquier plan) y profesores.
@@ -28,6 +29,7 @@ import { ChatGateway } from './chat.gateway';
             CourseEnrollment,
         ]),
         AuthModule,   // para JwtService (que usa el ChatGateway)
+        PushModule,
     ],
     controllers: [ChatController],
     providers: [ChatService, ChatGateway],
