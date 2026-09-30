@@ -9,6 +9,7 @@ import { CourseReview } from './entities/course-review.entity';
 import { Course } from '../courses/entities/course.entity';
 import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
 import { UpsertCourseReviewDto } from './dto/upsert-course-review.dto';
+import { ModerationService } from '../moderation/moderation.service';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -37,8 +38,14 @@ export interface CourseReviewsPage {
   summary: CourseReviewsSummary;
 }
 
-/** Por qué el usuario no puede reseñar. El front arma el mensaje con esto. */
-export type CannotReviewReason = 'not_enrolled' | 'own_course';
+/**
+ * Por qué el usuario no puede reseñar. El front arma el mensaje con esto.
+ *
+ * `not_completed`: está inscripto pero todavía no terminó el curso. Se reseña
+ * lo que se cursó entero, sin excepciones (tampoco el admin: no está inscripto,
+ * así que cae en `not_enrolled`).
+ */
+export type CannotReviewReason = 'not_enrolled' | 'not_completed' | 'own_course';
 
 export interface MyCourseReview {
   canReview: boolean;
@@ -54,6 +61,7 @@ export class CourseReviewsService {
     @InjectRepository(Course)
     private readonly coursesRepository: Repository<Course>,
     private readonly enrollmentsService: CourseEnrollmentsService,
+    private readonly moderationService: ModerationService,
   ) { }
 
   /** Listado público paginado + resumen (promedio y distribución). */
@@ -93,13 +101,13 @@ export class CourseReviewsService {
   }
 
   /**
-   * Crea o edita la reseña propia. Requiere inscripción activa al curso, y el
-   * instructor no puede reseñar el suyo.
+   * Crea o edita la reseña propia. Requiere inscripción activa **y el curso
+   * terminado**; el instructor no puede reseñar el suyo.
    *
-   * SIN moderación de contenido: cualquier comentario se publica tal cual.
-   * (Hubo una integración con Google Cloud Natural Language que se sacó por
-   * un problema con el alta de facturación de esa cuenta de Google — no
-   * técnico. Si se retoma, entra acá, antes del upsert.)
+   * El comentario pasa por ModerationService (lista local + IA de Groq)
+   * antes de guardarse: si es ofensivo, 422 y no se escribe nada. Las
+   * críticas negativas respetuosas se publican. Se modera DESPUÉS de los
+   * permisos, para no gastar una llamada a la IA con quien no puede reseñar.
    *
    * El upsert es por (user, course) con ON CONFLICT: dos envíos simultáneos
    * (doble click) no pueden terminar en violación de unique, igual que el
@@ -119,9 +127,15 @@ export class CourseReviewsService {
     if (reason === 'not_enrolled') {
       throw new ForbiddenException('Tenés que estar inscripto al curso para dejar una reseña.');
     }
+    if (reason === 'not_completed') {
+      throw new ForbiddenException('Podés reseñar el curso cuando lo termines.');
+    }
 
     // Espacios solos = sin comentario: no guardamos strings vacíos.
     const comment = dto.comment?.trim() || null;
+
+    // Un puntaje sin comentario no tiene nada que moderar.
+    if (comment) await this.moderationService.assertPublishable(comment);
 
     await this.reviewsRepository.upsert(
       {
@@ -167,8 +181,14 @@ export class CourseReviewsService {
     userId: string,
   ): Promise<CannotReviewReason | null> {
     if (course.instructor?.id === userId) return 'own_course';
+
     const enrolled = await this.enrollmentsService.hasActiveEnrollment(userId, course.id);
-    return enrolled ? null : 'not_enrolled';
+    if (!enrolled) return 'not_enrolled';
+
+    /* Terminar el curso es condición para reseñarlo, sin excepción: opina
+       quien lo hizo entero (lecciones al 100% y checkpoints aprobados). */
+    const completed = await this.enrollmentsService.hasCompletedCourse(userId, course.id);
+    return completed ? null : 'not_completed';
   }
 
   /** Promedio, total y distribución en una sola consulta agrupada. */
