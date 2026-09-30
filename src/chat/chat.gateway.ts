@@ -3,6 +3,7 @@ import {
     ConnectedSocket,
     MessageBody,
     OnGatewayConnection,
+    OnGatewayDisconnect,
     SubscribeMessage,
     WebSocketGateway,
     WebSocketServer,
@@ -16,6 +17,7 @@ import { Server, Socket } from 'socket.io';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { ChatService } from './chat.service';
 import { Message } from './entities/message.entity';
+import { PushService } from '../push/push.service';
 
 interface ChatAccessToken {
     sub: string;
@@ -34,7 +36,7 @@ interface ChatAccessToken {
         credentials: true,
     },
 })
-export class ChatGateway implements OnGatewayConnection {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
     private server: Server;
 
@@ -43,7 +45,14 @@ export class ChatGateway implements OnGatewayConnection {
         private readonly chatService: ChatService,
         @InjectRepository(User)
         private readonly usersRepository: Repository<User>,
+        private readonly pushService: PushService,
     ) { }
+
+    private readonly focusedConversations = new Map<string, string>();
+
+    handleDisconnect(client: Socket): void {
+        this.focusedConversations.delete(client.id);
+    }
 
     async handleConnection(client: Socket): Promise<void> {
         try {
@@ -100,6 +109,28 @@ export class ChatGateway implements OnGatewayConnection {
                 .to(this.userRoom(userId))
                 .to(this.userRoom(receiverId))
                 .emit('message:new', message);
+            const recipientIsViewing = [...this.focusedConversations].some(
+                ([socketId, otherUserId]) =>
+                    this.server.sockets.sockets.get(socketId)?.data.userId === receiverId &&
+                    otherUserId === userId,
+            );
+            if (!recipientIsViewing) {
+                const conversationId = `direct-${userId}`;
+                const [sender, unread] = await Promise.all([
+                    this.usersRepository.findOne({ where: { id: userId }, select: { name: true } }),
+                    this.chatService.countUnreadFromSender(receiverId, userId),
+                ]);
+                const senderName = sender?.name ?? 'Alguien';
+                void this.pushService.sendToUser(receiverId, {
+                    title: unread > 1
+                        ? `Nuevo mensaje recibido (${unread})`
+                        : 'Nuevo mensaje recibido',
+                    body: `${senderName}: ${message.content.slice(0, 120)}`,
+                    url: `/dashboard/chats?conversation=${conversationId}`,
+                    tag: `chat-${conversationId}`,
+                    icon: '/logo-campus.png',
+                }).catch(() => undefined);
+            }
             // Nest manda este valor como ack de vuelta a quien envió: así el
             // front confirma el envío (y obtiene el id/createdAt reales) sin
             // depender sólo del 'message:new' que ya recibió por el emit.
@@ -108,6 +139,27 @@ export class ChatGateway implements OnGatewayConnection {
             if (error instanceof HttpException) throw new WsException(error.message);
             throw new WsException('No se pudo enviar el mensaje');
         }
+    }
+
+    @SubscribeMessage('chat:focus')
+    focusConversation(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() payload: unknown,
+    ): void {
+        const otherUserId = this.readOtherUserId(payload);
+        if (!otherUserId || !client.data.userId) return;
+        this.focusedConversations.set(client.id, otherUserId);
+    }
+
+    @SubscribeMessage('chat:blur')
+    blurConversation(@ConnectedSocket() client: Socket): void {
+        this.focusedConversations.delete(client.id);
+    }
+
+    private readOtherUserId(payload: unknown): string | null {
+        if (typeof payload !== 'object' || payload === null) return null;
+        const otherUserId = (payload as Record<string, unknown>).otherUserId;
+        return typeof otherUserId === 'string' && isUUID(otherUserId) ? otherUserId : null;
     }
 
     private getToken(client: Socket): string | null {
