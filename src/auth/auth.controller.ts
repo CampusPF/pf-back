@@ -21,6 +21,7 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { GoogleAuthGuard } from "./guards/google-auth.guard";
 import { Public } from "./decorators/public.decorator";
+import { AccountDisabledException } from "./account-disabled.exception";
 import { Throttle } from "@nestjs/throttler";
 
 // Se leen como función (no como valor) para que se resuelvan en cada request,
@@ -140,8 +141,12 @@ export class AuthController {
       // que Nest devuelva el 401/409 como JSON el usuario queda en una página
       // muerta. En vez de eso lo mandamos de vuelta a la pantalla de la que
       // salió con un motivo, y sin dejar cookie de sesión.
+      //   - account_disabled: la cuenta fue dada de baja (va primero).
       //   - not_registered: entró por /login pero no tiene cuenta.
       //   - already_registered: entró por /register pero el email ya existe.
+      if (error instanceof AccountDisabledException) {
+        return res.redirect(`${frontendUrl}/${flow}?error=account_disabled`);
+      }
       if (
         error instanceof UnauthorizedException ||
         error instanceof ConflictException

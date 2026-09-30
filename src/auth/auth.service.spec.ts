@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { CloudinaryService } from '../file-upload/cloudinary.service';
+import { AccountDisabledException, ACCOUNT_DISABLED_MESSAGE } from './account-disabled.exception';
 
 // Nota: NO se usa @nestjs/testing acá a propósito. La versión instalada
 // (v12.0.1) se distribuye como paquete ESM puro ("type": "module", sin
@@ -314,37 +315,66 @@ describe('AuthService — matching de usuario (form vs Google)', () => {
     expect(all.filter((u) => u.email === 'raceform@test.com')).toHaveLength(1);
   });
 
-  // Bug real detectado en producción: "eliminar" a alguien desde el panel de
-  // admin (soft-delete, UsersService.remove) no le sacaba el acceso — ni acá
-  // ni en JwtStrategy.validate() se miraba `status`. Ambos deben rechazar,
-  // y con el MISMO mensaje que credenciales inválidas / cuenta inexistente:
-  // no hay que delatar que la cuenta existe pero fue dada de baja.
+  // "Eliminar" a alguien desde el panel de admin (soft-delete,
+  // UsersService.remove) tiene que sacarle el acceso Y avisarle por qué. Antes
+  // el login decía "no existe una cuenta" y el registro "ya existe una
+  // cuenta": dos respuestas contradictorias, y la persona nunca se enteraba
+  // de la baja. Ahora todos los caminos dicen lo mismo: ACCOUNT_DISABLED_MESSAGE.
   describe('cuenta dada de baja (status !== ACTIVE)', () => {
-    it('login por form rechaza con el mismo mensaje que credenciales inválidas', async () => {
+    const registerAndRemove = async (email: string) => {
       const { user } = await authService.register(
-        registerPayload({ name: 'Baja Form', email: 'bajaform@test.com' }) as any,
+        registerPayload({ name: 'Baja', email }) as any,
       );
       await usersService.remove(user.id);
+    };
+
+    it('login con la contraseña CORRECTA → avisa que la cuenta fue dada de baja', async () => {
+      await registerAndRemove('baja1@test.com');
 
       await expect(
-        authService.login({ email: 'bajaform@test.com', password: 'SecurePass123' } as any),
-      ).rejects.toThrow('Credenciales inválidas');
+        authService.login({ email: 'baja1@test.com', password: 'SecurePass123' } as any),
+      ).rejects.toThrow(AccountDisabledException);
     });
 
-    it('login por Google rechaza con el mismo mensaje que "no existe cuenta"', async () => {
-      const { user } = await authService.loginWithGoogle(
-        { googleId: 'google-id-baja', email: 'bajagoogle@test.com', name: 'Baja Google' },
-        'register',
-      );
-      await usersService.remove(user.id);
+    it('login con contraseña INCORRECTA → "Credenciales inválidas" (no revela la baja a un extraño)', async () => {
+      await registerAndRemove('baja2@test.com');
+
+      const error = await authService
+        .login({ email: 'baja2@test.com', password: 'OtraClave999' } as any)
+        .catch((e) => e);
+      expect(error).not.toBeInstanceOf(AccountDisabledException);
+      expect(error.message).toBe('Credenciales inválidas');
+    });
+
+    it('registro por form con el mismo email → avisa la baja, no "ya existe, iniciá sesión"', async () => {
+      await registerAndRemove('baja3@test.com');
 
       await expect(
-        authService.loginWithGoogle({
-          googleId: 'google-id-baja',
-          email: 'bajagoogle@test.com',
-          name: 'Baja Google',
-        }),
-      ).rejects.toThrow('No existe una cuenta con este email');
+        authService.register(registerPayload({ name: 'Otra vez', email: 'baja3@test.com' }) as any),
+      ).rejects.toThrow(ACCOUNT_DISABLED_MESSAGE);
+    });
+
+    it('Google, desde /login y desde /register → avisa la baja en los dos', async () => {
+      const googleUser = { googleId: 'google-id-baja', email: 'bajagoogle@test.com', name: 'Baja Google' };
+      const { user } = await authService.loginWithGoogle(googleUser, 'register');
+      await usersService.remove(user.id);
+
+      await expect(authService.loginWithGoogle(googleUser, 'login')).rejects.toThrow(
+        AccountDisabledException,
+      );
+      await expect(authService.loginWithGoogle(googleUser, 'register')).rejects.toThrow(
+        AccountDisabledException,
+      );
+    });
+
+    it('recuperar contraseña → misma respuesta de siempre, pero NO genera token ni manda mail', async () => {
+      // resetTokenService y mailService van vacíos en este setup: si el
+      // código intentara generar el token o mandar el mail, tiraría TypeError.
+      await registerAndRemove('baja4@test.com');
+
+      await expect(authService.forgotPassword({ email: 'baja4@test.com' } as any)).resolves.toEqual({
+        message: 'Si el correo está registrado, te enviamos las instrucciones.',
+      });
     });
   });
 });

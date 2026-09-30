@@ -1,5 +1,5 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { JwtStrategy } from './jwt.strategy';
+import { AccountDisabledException } from '../account-disabled.exception';
 import { UsersService } from '../../users/users.service';
 import { UserRole, UserStatus } from '../../users/entities/user.entity';
 
@@ -35,7 +35,7 @@ describe('JwtStrategy', () => {
   });
 
   it.each([UserStatus.DELETED, UserStatus.BANNED, UserStatus.INACTIVE])(
-    'usuario con status %s: rechaza aunque el JWT sea válido',
+    'usuario con status %s: rechaza con el aviso de cuenta dada de baja aunque el JWT sea válido',
     async (status) => {
       const findOne = jest.fn().mockResolvedValue({
         id: 'user-1',
@@ -44,8 +44,10 @@ describe('JwtStrategy', () => {
         status,
       });
 
+      // 403 con motivo, no un 401 mudo: el front lo usa para explicarle a la
+      // persona por qué le cerró la sesión.
       await expect(makeStrategy(findOne).validate(PAYLOAD)).rejects.toBeInstanceOf(
-        UnauthorizedException,
+        AccountDisabledException,
       );
     },
   );
