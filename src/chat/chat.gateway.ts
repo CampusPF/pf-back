@@ -13,7 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
 import { Server, Socket } from 'socket.io';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { ChatService } from './chat.service';
 import { Message } from './entities/message.entity';
 
@@ -60,7 +60,10 @@ export class ChatGateway implements OnGatewayConnection {
             }
 
             const user = await this.usersRepository.findOne({ where: { id: payload.sub } });
-            if (!user || user.role === UserRole.ADMIN) {
+            // El handshake no pasa por JwtStrategy: el chequeo de cuenta
+            // activa tiene que estar también acá, o una cuenta dada de baja
+            // seguiría chateando con su token.
+            if (!user || user.status !== UserStatus.ACTIVE || user.role === UserRole.ADMIN) {
                 client.disconnect(true);
                 return;
             }
