@@ -168,6 +168,9 @@ export const envValidationSchema = Joi.object({
   // Firma los links de "no quiero más recordatorios". Secret propio, igual
   // que JWT_RESET_SECRET: un link de baja filtrado no sirve de sesión.
   JWT_UNSUBSCRIBE_SECRET: requiredInProd(Joi.string().min(32)),
+  COURSE_PUSH_CRON: Joi.string().default('0 19 */3 * *'),
+COURSE_PUSH_TZ: Joi.string().default('America/Argentina/Buenos_Aires'),
+COURSE_PUSH_MIN_INTERVAL_DAYS: Joi.number().integer().positive().default(3),
 })
   // Permite variables extra en el entorno (PATH, HOME, las que inyecta el
   // hosting, etc.) sin hacer fallar el arranque.

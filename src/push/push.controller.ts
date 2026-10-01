@@ -5,6 +5,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { SubscribePushDto, UnsubscribePushDto } from './dto/push-subscription.dto';
 import { PushService } from './push.service';
+import { CoursePushRemindersService, CoursePushRemindersRunResult } from './course-push-reminders.service';
 
 @ApiTags('push')
 @Controller('push')
@@ -12,6 +13,7 @@ export class PushController {
     constructor(
         private readonly pushService: PushService,
         private readonly config: ConfigService,
+        private readonly coursePushReminders: CoursePushRemindersService,
     ) { }
 
     @Post('subscribe')
@@ -58,5 +60,15 @@ export class PushController {
             throw new NotFoundException();
         }
         return this.pushService.cleanupSubscriptionsForDevelopment();
+    }
+
+    @Post('course-reminders/run')
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Disparar recordatorios push de cursos (solo desarrollo)' })
+    async runCourseReminders(): Promise<CoursePushRemindersRunResult> {
+        if (this.config.get<string>('NODE_ENV') === 'production') {
+            throw new NotFoundException();
+        }
+        return this.coursePushReminders.run();
     }
 }
