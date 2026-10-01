@@ -96,49 +96,53 @@ export class CoursePushRemindersService implements OnModuleInit {
             [inactivityDays],
         );
 
-        if (rows.length === 0) {
-            this.logger.log('Sin alumnos inactivos con push habilitado.');
-            return { candidates: 0, sent: 0, skipped: 0 };
-        }
-
-        const byUser = new Map<string, InactiveEnrollmentRow>();
+        const byUser = new Map<string, InactiveEnrollmentRow[]>();
         for (const row of rows) {
-            if (!byUser.has(row.user_id)) byUser.set(row.user_id, row);
+            const userRows = byUser.get(row.user_id) ?? [];
+            userRows.push(row);
+            byUser.set(row.user_id, userRows);
         }
 
         const cutoff = new Date(Date.now() - minIntervalDays * 24 * 60 * 60 * 1000);
         let sent = 0;
         let skipped = 0;
 
-        for (const [userId, course] of byUser) {
-            const existing = await this.remindersRepository.findOne({
-                where: { userId, courseId: course.course_id },
-            });
-            if (existing && existing.lastSentAt > cutoff) {
+        for (const [userId, courses] of byUser) {
+            let selectedCourse: InactiveEnrollmentRow | undefined;
+            let existingReminder: CoursePushReminder | null = null;
+            for (const course of courses) {
+                const reminder = await this.remindersRepository.findOne({
+                    where: { userId, courseId: course.course_id },
+                });
+                if (!reminder || reminder.lastSentAt <= cutoff) {
+                    selectedCourse = course;
+                    existingReminder = reminder;
+                    break;
+                }
+            }
+            if (!selectedCourse) {
                 skipped++;
                 continue;
             }
 
-            const body = `Tu curso "${course.course_title}" no registra actividad hace ${course.days_inactive} días.`;
-            void this.pushService
-                .sendToUser(userId, {
-                    title: 'Sigamos aprendiendo',
-                    body,
-                    url: '/dashboard/mis-cursos',
-                    tag: `course-reminder-${course.course_id}`,
-                    icon: '/logo-campus.png',
-                })
-                .catch(() => undefined);
+            const body = `Tu curso "${selectedCourse.course_title}" no registra actividad hace ${selectedCourse.days_inactive} días.`;
+            await this.pushService.sendToUser(userId, {
+                title: 'Sigamos aprendiendo',
+                body,
+                url: '/dashboard/mis-cursos',
+                tag: `course-reminder-${selectedCourse.course_id}`,
+                icon: '/logo-campus.png',
+            });
 
             const now = new Date();
-            if (existing) {
-                existing.lastSentAt = now;
-                await this.remindersRepository.save(existing);
+            if (existingReminder) {
+                existingReminder.lastSentAt = now;
+                await this.remindersRepository.save(existingReminder);
             } else {
                 await this.remindersRepository.save(
                     this.remindersRepository.create({
                         userId,
-                        courseId: course.course_id,
+                        courseId: selectedCourse.course_id,
                         lastSentAt: now,
                     }),
                 );
@@ -147,7 +151,7 @@ export class CoursePushRemindersService implements OnModuleInit {
         }
 
         this.logger.log(
-            `Recordatorios push de cursos: ${sent} enviados, ${skipped} salteados, ${byUser.size} candidatos.`,
+            `Recordatorios push de cursos: ${sent} enviados, ${skipped} salteados, ${byUser.size} candidatos`,
         );
         return { candidates: byUser.size, sent, skipped };
     }

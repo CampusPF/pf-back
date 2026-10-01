@@ -11,6 +11,7 @@ import { CourseStatsService } from './course-stats.service';
 import { CourseReview } from '../course-reviews/entities/course-review.entity';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
+import { PushModule } from '../push/push.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
     TypeOrmModule.forFeature([Course, Category, User, CourseReview, CourseEnrollment, Lesson]),
     AuthModule,
     FileUploadModule,
+    PushModule,
   ],
   controllers: [CoursesController],
   providers: [CoursesService, CourseStatsService],

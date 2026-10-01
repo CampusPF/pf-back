@@ -72,28 +72,103 @@ export class PushService implements OnModuleInit {
     async sendToUser(userId: string, payload: PushPayload): Promise<void> {
         if (!this.configured) return;
 
-        const subscriptions = await this.subscriptionsRepository.find({ where: { userId } });
-        await Promise.all(subscriptions.map(async (stored) => {
-            try {
-                await webPush.sendNotification(
-                    {
-                        endpoint: stored.endpoint,
-                        keys: { p256dh: stored.p256dh, auth: stored.auth },
-                    },
-                    JSON.stringify(payload),
-                );
-            } catch (error) {
-                const statusCode =
-                    typeof error === 'object' && error !== null && 'statusCode' in error
-                        ? (error as { statusCode?: unknown }).statusCode
-                        : undefined;
-                if (statusCode === 401 || statusCode === 403 || statusCode === 404 || statusCode === 410) {
-                    await this.subscriptionsRepository.delete({ id: stored.id });
-                } else {
-                    this.logger.warn(`Web Push delivery failed for subscription ${stored.id}`);
+        try {
+            const subscriptions = await this.subscriptionsRepository.find({ where: { userId } });
+            await Promise.all(subscriptions.map(async (stored) => {
+                try {
+                    await webPush.sendNotification(
+                        {
+                            endpoint: stored.endpoint,
+                            keys: { p256dh: stored.p256dh, auth: stored.auth },
+                        },
+                        JSON.stringify(payload),
+                    );
+                } catch (error) {
+                    const statusCode = this.getStatusCode(error);
+                    if (this.isDeadSubscriptionStatus(statusCode)) {
+                        await this.deleteSubscriptionSafely(stored.id);
+                    } else {
+                        this.logger.warn(`Web Push delivery failed for user ${userId}`);
+                    }
                 }
+            }));
+        } catch (error) {
+            this.logger.warn(
+                `Web Push delivery failed for user ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+    }
+
+    /**
+     * Manda el mismo push a todos los usuarios con al menos una suscripción,
+     * excepto (opcionalmente) a uno. Se usa para anuncios generales: curso
+     * nuevo, evento, promo, etc. NO manda uno por navegador: agrupa por
+     * usuario y manda al primer endpoint que encuentre.
+     */
+    async sendToAll(
+        payload: PushPayload,
+        options?: { excludeUserId?: string },
+    ): Promise<{ sent: number; failed: number }> {
+        let sent = 0;
+        let failed = 0;
+        try {
+            if (this.configured) {
+                const query = this.subscriptionsRepository
+                    .createQueryBuilder('sub')
+                    .distinctOn(['sub.user_id'])
+                    .orderBy('sub.user_id', 'ASC')
+                    .addOrderBy('sub.created_at', 'ASC')
+                    .addOrderBy('sub.id', 'ASC');
+
+                if (options?.excludeUserId) {
+                    query.where('sub.user_id != :exclude', { exclude: options.excludeUserId });
+                }
+
+                const subscriptions = await query.getMany();
+                await Promise.all(
+                    subscriptions.map(async (stored) => {
+                        try {
+                            await webPush.sendNotification(
+                                {
+                                    endpoint: stored.endpoint,
+                                    keys: { p256dh: stored.p256dh, auth: stored.auth },
+                                },
+                                JSON.stringify(payload),
+                            );
+                            sent++;
+                        } catch (error) {
+                            failed++;
+                            if (this.isDeadSubscriptionStatus(this.getStatusCode(error))) {
+                                await this.deleteSubscriptionSafely(stored.id);
+                            }
+                        }
+                    }),
+                );
             }
-        }));
+        } catch {
+            failed++;
+        }
+
+        this.logger.log(`Broadcast push: ${sent} enviados, ${failed} fallidos`);
+        return { sent, failed };
+    }
+
+    private getStatusCode(error: unknown): unknown {
+        return typeof error === 'object' && error !== null && 'statusCode' in error
+            ? (error as { statusCode?: unknown }).statusCode
+            : undefined;
+    }
+
+    private isDeadSubscriptionStatus(statusCode: unknown): boolean {
+        return statusCode === 401 || statusCode === 403 || statusCode === 404 || statusCode === 410;
+    }
+
+    private async deleteSubscriptionSafely(id: string): Promise<void> {
+        try {
+            await this.subscriptionsRepository.delete({ id });
+        } catch {
+            // A failed prune must not interrupt push delivery or broadcast logging.
+        }
     }
 
     async sendTestToUser(userId: string): Promise<{ sent: boolean }> {

@@ -19,6 +19,7 @@ import {
   UPLOAD_FOLDERS,
 } from '../file-upload/cloudinary.service';
 import { EVENTS, CourseRenamedEvent, CourseBlockedByAdminEvent } from '../events';
+import { PushService } from '../push/push.service';
 
 @Injectable()
 export class CoursesService {
@@ -31,6 +32,7 @@ export class CoursesService {
     private readonly usersRepository: Repository<User>,
     private readonly cloudinary: CloudinaryService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly pushService: PushService,
   ) { }
 
   async create(dto: CreateCourseDto, instructorId: string): Promise<Course> {
@@ -69,7 +71,25 @@ export class CoursesService {
       instructor,
     });
 
-    return this.coursesRepository.save(course);
+    const saved = await this.coursesRepository.save(course);
+
+    // Anuncio a todos los usuarios con push activado, excepto al docente
+    // que acaba de crear el curso. No bloquea la respuesta si falla:
+    // el push es secundario, el curso ya está creado.
+    void this.pushService
+      .sendToAll(
+        {
+          title: 'Últimas novedades',
+          body: `${saved.title} ya está disponible`,
+          url: `/courses/${saved.slug}`,
+          tag: `new-course-${saved.id}`,
+          icon: '/logo-campus.png',
+        },
+        { excludeUserId: instructorId },
+      )
+      .catch(() => undefined);
+
+    return saved;
   }
 
   async findAll(includeInactive = false): Promise<Course[]> {
@@ -178,7 +198,7 @@ export class CoursesService {
    * docente no pueda reactivar (ni seguir editando) algo que un admin bajó.
    */
   async remove(id: string, actor: Actor): Promise<Course> {
-      const course = await this.findOne(id);
+    const course = await this.findOne(id);
     // Lo único que el ADMIN puede hacer sobre un curso (además de restaurarlo).
     assertCanRemoveCourse(course, actor);
     course.isActive = false;
@@ -194,7 +214,7 @@ export class CoursesService {
           saved.instructor.id,
           saved.id,
           saved.title,
-          new Date(), 
+          new Date(),
         ),
       );
     }
