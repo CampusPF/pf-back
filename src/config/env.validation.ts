@@ -87,7 +87,7 @@ export const envValidationSchema = Joi.object({
   THROTTLE_LIMIT: Joi.number().integer().positive().default(100),
   THROTTLE_AUTH_LIMIT: Joi.number().integer().positive().default(10),
   THROTTLE_AI_LIMIT: Joi.number().integer().positive().default(20),
-  THROTTLE_SPEECH_LIMIT: Joi.number().integer().positive().default(15),
+  THROTTLE_SPEECH_LIMIT: Joi.number().integer().positive().default(60),
 
   // --- Google OAuth ---
   GOOGLE_CLIENT_ID: requiredInProd(Joi.string()),

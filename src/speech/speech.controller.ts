@@ -21,10 +21,14 @@ import { TranscribeAudioDto } from './dto/transcribe-audio.dto';
 import { SpeechService } from './speech.service';
 
 // Cada dictado es una llamada paga a Groq. Cuenta por usuario (la ruta está
-// autenticada). Es el único freno: una transcripción cuesta centavos de
-// centavo (60 s como máximo desde el front), así que no hay límite diario ni
-// cuenta para el cupo de mensajes del tutor.
-const SPEECH_THROTTLE_LIMIT = () => Number(process.env.THROTTLE_SPEECH_LIMIT ?? 15);
+// autenticada). Es el único freno: no hay límite diario ni cuenta para el
+// cupo de mensajes del tutor.
+//
+// El límite es alto a propósito: el front muestra el texto MIENTRAS se habla,
+// así que manda lo grabado cada 4 s además de la transcripción final. Un
+// dictado de 30 s son ~8 llamadas. A US$ 0,04/hora con mínimo facturable de
+// 10 s, ese dictado cuesta menos de US$ 0,001.
+const SPEECH_THROTTLE_LIMIT = () => Number(process.env.THROTTLE_SPEECH_LIMIT ?? 60);
 const SPEECH_THROTTLE_TTL_MS = () => Number(process.env.THROTTLE_TTL ?? 60) * 1000;
 
 @ApiTags('speech')
