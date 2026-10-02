@@ -1,6 +1,6 @@
 import { HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SpeechService } from './speech.service';
+import { SpeechService, stripPromptEcho } from './speech.service';
 
 function makeService(env: Record<string, string | undefined> = { GROQ_API_KEY: 'gsk_test' }) {
     const config = { get: (key: string) => env[key] } as unknown as ConfigService;
@@ -49,6 +49,40 @@ describe('SpeechService.cleanTranscript', () => {
 
     it('sin segmentos usa `text`', () => {
         expect(service.cleanTranscript({ text: '  hola   profe ' })).toBe('hola profe');
+    });
+});
+
+/* Whisper a veces arranca copiando el prompt. Pasó de verdad probando con
+   auriculares: se dictó "Hola, ¿cómo estás?" y llegó
+   "JavaScript, R.D.P.: Hola, ¿cómo estás?". */
+describe('stripPromptEcho', () => {
+    const vocabulary = ['JavaScript', 'TypeScript', 'React', 'NestJS', 'TypeORM', 'PostgreSQL'];
+    const strip = (text: string) => stripPromptEcho(text, vocabulary);
+
+    it('saca el caso real: término + sigla deformada', () => {
+        expect(strip('JavaScript, R.D.P.: Hola, ¿cómo estás?')).toBe('Hola, ¿cómo estás?');
+    });
+
+    it('saca varios términos seguidos', () => {
+        expect(strip('JavaScript, TypeScript, React: ¿qué es un hook?')).toBe('¿qué es un hook?');
+    });
+
+    it('no toca una transcripción normal', () => {
+        expect(strip('Hola profe, ¿cómo estás?')).toBe('Hola profe, ¿cómo estás?');
+        expect(strip('No entiendo la diferencia entre find y findOne.')).toBe(
+            'No entiendo la diferencia entre find y findOne.',
+        );
+    });
+
+    /* Lo importante: no comerse lo que alguien dijo de verdad. Si la frase
+       EMPIEZA con un término pero sigue con lenguaje real, se conserva. */
+    it('respeta una frase que empieza con un término pero no es eco', () => {
+        expect(strip('TypeScript, ¿me lo explicás de nuevo?')).toBe('TypeScript, ¿me lo explicás de nuevo?');
+        expect(strip('React, Angular y Vue, ¿cuál conviene?')).toBe('React, Angular y Vue, ¿cuál conviene?');
+    });
+
+    it('nunca devuelve vacío', () => {
+        expect(strip('JavaScript, TypeScript')).toBe('JavaScript, TypeScript');
     });
 });
 

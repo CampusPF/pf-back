@@ -30,10 +30,13 @@ const NO_SPEECH_THRESHOLD = 0.6;
 /**
  * Vocabulario que Whisper suele escribir mal ("TypeORM" → "tipeo ORM"). Va
  * en el prompt: Whisper lo toma como texto previo y copia la ortografía.
+ *
+ * Es una lista corta a propósito. Con una larga, y sobre todo en audios de
+ * pocos segundos, Whisper la COPIA al principio de la transcripción en vez
+ * de usarla de referencia ("JavaScript, R.D.P.: Hola, ¿cómo estás?"), que es
+ * lo que después limpia `stripPromptEcho`.
  */
-const TECH_VOCABULARY =
-    'JavaScript, TypeScript, React, Next.js, NestJS, TypeORM, Node.js, HTML, CSS, API, ' +
-    'frontend, backend, PostgreSQL, GitHub, UX/UI';
+const TECH_VOCABULARY = ['JavaScript', 'TypeScript', 'React', 'NestJS', 'TypeORM', 'PostgreSQL'];
 
 /**
  * Frases que Whisper "alucina" en español cuando el audio es silencio o
@@ -79,6 +82,49 @@ function normalize(text: string): string {
         .replace(/[^a-z0-9ñ ]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+/**
+ * Saca del principio el eco del prompt. Whisper a veces arranca copiando los
+ * términos que le pasamos ("JavaScript, R.D.P.: Hola, ¿cómo estás?" cuando lo
+ * dicho fue "Hola, ¿cómo estás?"), sobre todo en audios de pocos segundos.
+ *
+ * Se recorren los fragmentos iniciales separados por coma o dos puntos y se
+ * descartan mientras sean vocabulario nuestro, o siglas sueltas de hasta 4
+ * letras ("R.D.P.") que son el término deformado. Se corta en el primer
+ * fragmento que parece lenguaje real, así nunca se come lo que se dijo: una
+ * frase que EMPIECE con "TypeScript, ..." se conserva si lo que sigue no es
+ * otro término (ver tests).
+ */
+export function stripPromptEcho(text: string, vocabulary: readonly string[]): string {
+    const known = new Set(vocabulary.map((term) => normalize(term).replace(/\s+/g, '')));
+    let rest = text;
+    let removed = 0;
+    let lastSeparator = '';
+
+    for (let guard = 0; guard < vocabulary.length + 2; guard += 1) {
+        // Fragmento inicial hasta la primera coma o dos puntos.
+        const match = /^\s*([^,:]{1,20})\s*([,:])\s*(.+)$/s.exec(rest);
+        if (!match) break;
+        const [, head, separator, tail] = match;
+        const key = normalize(head).replace(/\s+/g, '');
+        const isKnownTerm = known.has(key);
+        // Sigla deformada: "R.D.P.", "N.J.S." — puntos entre letras sueltas.
+        const isAcronym = /^(?:[a-zA-Z]\.){2,4}$/.test(head.trim());
+        if (!isKnownTerm && !isAcronym) break;
+        rest = tail;
+        removed += 1;
+        lastSeparator = separator;
+    }
+
+    /* Hace falta más que un término suelto para llamarlo eco: alguien puede
+       empezar de verdad con "TypeScript, ¿me lo explicás?". Se limpia sólo
+       con dos o más términos seguidos, o cuando cierran con ":" — la forma
+       en que Whisper separa el prompt copiado de lo que se dijo. */
+    const looksLikeEcho = removed >= 2 || (removed === 1 && lastSeparator === ':');
+    const cleaned = rest.trim();
+    if (!looksLikeEcho || !cleaned) return text.trim();
+    return cleaned;
 }
 
 /** Extensión que Groq usa para reconocer el formato del archivo. */
@@ -182,7 +228,7 @@ export class SpeechService {
                 .join(' ')
             : (data.text ?? '');
 
-        const trimmed = text.replace(/\s+/g, ' ').trim();
+        const trimmed = stripPromptEcho(text.replace(/\s+/g, ' ').trim(), TECH_VOCABULARY);
         if (!trimmed) return '';
         if (KNOWN_HALLUCINATIONS.includes(normalize(trimmed))) return '';
         return trimmed;
@@ -192,7 +238,9 @@ export class SpeechService {
         const clean = (context ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_CONTEXT_CHARS);
         // El prompt de Whisper no es una instrucción: es "texto anterior" que
         // le marca el estilo y el vocabulario (tildes, puntuación, términos).
-        const topic = clean ? `sobre "${clean}"` : 'sobre tecnología';
-        return `Consulta de un alumno ${topic}. Términos: ${TECH_VOCABULARY}.`;
+        // Va redactado como una oración y no como una lista suelta: una lista
+        // invita a que la siga escribiendo en vez de tomarla de referencia.
+        const topic = clean ? `la lección "${clean}"` : 'programación';
+        return `El alumno pregunta sobre ${topic}, usando términos como ${TECH_VOCABULARY.join(', ')}.`;
     }
 }
