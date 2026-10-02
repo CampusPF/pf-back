@@ -37,6 +37,7 @@ import { CourseProgressionModule } from './course-progression/course-progression
 import { AchievementsModule } from './achievements/achievements.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { AdminStatsModule } from './admin-stats/admin-stats.module';
+import { SpeechModule } from './speech/speech.module';
 
 
 
@@ -129,6 +130,7 @@ import { AdminStatsModule } from './admin-stats/admin-stats.module';
     CertificatesModule,
     // Métricas agregadas del panel de administración.
     AdminStatsModule,
+    SpeechModule,
   ],
   controllers: [AppController],
   providers: [
