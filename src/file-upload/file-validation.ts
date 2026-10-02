@@ -3,9 +3,30 @@ import { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 export const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
+// Un audio de voz de 60 s pesa ~0,5 MB en Opus (Chrome/Firefox) y ~1 MB en
+// AAC (Safari): 5 MB deja margen sin abrir la puerta a archivos enormes.
+export const MAX_AUDIO_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PDF_MIME_TYPES = ['application/pdf'];
+// Lo que graba MediaRecorder en cada navegador: webm/opus (Chrome, Edge,
+// Firefox, Android), mp4/aac (Safari, iOS) y ogg/opus (Firefox viejo). Más
+// mp3/wav por si se sube un archivo a mano.
+const AUDIO_MIME_TYPES = [
+    'audio/webm',
+    'audio/ogg',
+    'audio/mp4',
+    'audio/x-m4a',
+    'audio/mpeg',
+    'audio/wav',
+    'audio/x-wav',
+];
+
+/** "audio/webm;codecs=opus" → "audio/webm": el navegador manda el codec
+    como parámetro del tipo, y lo que se valida es el tipo base. */
+function baseMimeType(mimetype: string): string {
+    return mimetype.split(';')[0].trim().toLowerCase();
+}
 
 /**
  * fileFilter rechaza por mimetype ANTES de leer el archivo entero, y
@@ -17,7 +38,7 @@ function buildOptions(allowed: string[], maxBytes: number): MulterOptions {
     return {
         limits: { fileSize: maxBytes, files: 1 },
         fileFilter: (_req, file, callback) => {
-            if (!allowed.includes(file.mimetype)) {
+            if (!allowed.includes(baseMimeType(file.mimetype))) {
                 callback(
                     new BadRequestException(
                         `Tipo de archivo no permitido. Se aceptan: ${allowed.join(', ')}.`,
@@ -33,6 +54,7 @@ function buildOptions(allowed: string[], maxBytes: number): MulterOptions {
 
 export const IMAGE_UPLOAD_OPTIONS = buildOptions(IMAGE_MIME_TYPES, MAX_IMAGE_BYTES);
 export const PDF_UPLOAD_OPTIONS = buildOptions(PDF_MIME_TYPES, MAX_PDF_BYTES);
+export const AUDIO_UPLOAD_OPTIONS = buildOptions(AUDIO_MIME_TYPES, MAX_AUDIO_BYTES);
 
 /**
  * Firmas de los primeros bytes de cada formato. Un mimetype se puede falsear
@@ -52,6 +74,20 @@ const IMAGE_SIGNATURES: Array<(buffer: Buffer) => boolean> = [
 // PDF: "%PDF"
 const isPdf = (b: Buffer): boolean => b.subarray(0, 4).toString('ascii') === '%PDF';
 
+const AUDIO_SIGNATURES: Array<(buffer: Buffer) => boolean> = [
+    // WebM/Matroska (EBML): 1A 45 DF A3
+    (b) => b.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])),
+    // Ogg: "OggS"
+    (b) => b.subarray(0, 4).toString('ascii') === 'OggS',
+    // MP4/M4A: "ftyp" en el offset 4
+    (b) => b.subarray(4, 8).toString('ascii') === 'ftyp',
+    // WAV: "RIFF" .... "WAVE"
+    (b) => b.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        b.subarray(8, 12).toString('ascii') === 'WAVE',
+    // MP3: con tag "ID3" o directo un frame (11 bits de sync en 1)
+    (b) => b.subarray(0, 3).toString('ascii') === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0),
+];
+
 /**
  * Valida que el contenido real del archivo coincida con lo que declara.
  * Se llama SIEMPRE antes de subir nada a Cloudinary: si falla, la request
@@ -59,7 +95,7 @@ const isPdf = (b: Buffer): boolean => b.subarray(0, 4).toString('ascii') === '%P
  */
 export function assertMagicBytes(
     file: Express.Multer.File,
-    kind: 'image' | 'pdf',
+    kind: 'image' | 'pdf' | 'audio',
 ): void {
     if (!file?.buffer?.length) {
         throw new BadRequestException('El archivo está vacío.');
@@ -68,13 +104,17 @@ export function assertMagicBytes(
     const valid =
         kind === 'pdf'
             ? isPdf(file.buffer)
-            : IMAGE_SIGNATURES.some((matches) => matches(file.buffer));
+            : (kind === 'audio' ? AUDIO_SIGNATURES : IMAGE_SIGNATURES).some((matches) =>
+                matches(file.buffer),
+            );
 
     if (!valid) {
         throw new BadRequestException(
             kind === 'pdf'
                 ? 'El archivo no es un PDF válido.'
-                : 'El archivo no es una imagen válida (JPEG, PNG o WEBP).',
+                : kind === 'audio'
+                    ? 'El archivo no es un audio válido (WebM, OGG, MP4, MP3 o WAV).'
+                    : 'El archivo no es una imagen válida (JPEG, PNG o WEBP).',
         );
     }
 }
@@ -82,10 +122,11 @@ export function assertMagicBytes(
 /** Multer deja `file` en undefined si el campo no vino en el multipart. */
 export function assertFilePresent(
     file: Express.Multer.File | undefined,
+    field = 'file',
 ): Express.Multer.File {
     if (!file) {
         throw new BadRequestException(
-            'No se recibió ningún archivo. Enviá el campo "file" como multipart/form-data.',
+            `No se recibió ningún archivo. Enviá el campo "${field}" como multipart/form-data.`,
         );
     }
     return file;

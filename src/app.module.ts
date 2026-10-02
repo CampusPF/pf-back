@@ -16,7 +16,7 @@ import { AuthModule } from './auth/auth.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AiTutorModule } from './aiTutor/aiTutor.module';
-import { MiddlewareConsumer, Module, NestModule, OnApplicationBootstrap } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -37,7 +37,7 @@ import { CourseProgressionModule } from './course-progression/course-progression
 import { AchievementsModule } from './achievements/achievements.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { AdminStatsModule } from './admin-stats/admin-stats.module';
-import { CategoriesService } from './categories/categories.service';
+import { SpeechModule } from './speech/speech.module';
 
 
 
@@ -130,6 +130,7 @@ import { CategoriesService } from './categories/categories.service';
     CertificatesModule,
     // Métricas agregadas del panel de administración.
     AdminStatsModule,
+    SpeechModule,
   ],
   controllers: [AppController],
   providers: [
@@ -153,22 +154,8 @@ import { CategoriesService } from './categories/categories.service';
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
-export class AppModule implements NestModule, OnApplicationBootstrap {
-  constructor(
-    private readonly categoriesService: CategoriesService
-    // private readonly productsService: ProductsService,
-  ) { }
+export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(RequestLoggerMiddleware).forRoutes('*');
-  }
-
-  async onApplicationBootstrap() {
-    //* seeder Categories => servicio Categories addCategories
-    // await this.categoriesService.addCategoryService();
-    console.log('Categorías insertadas correctamente ✅');
-
-    //* seeder Productos => servicio Productos addProducts
-    // await this.productsService.addProductsService();
-    console.log('Productos insertados correctamente ✅');
   }
 }

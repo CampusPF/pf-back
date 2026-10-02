@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { Message } from './entities/message.entity';
 import { ChatContactDto } from './dto/chat-contact.dto';
 
@@ -24,18 +24,14 @@ export class ChatService {
     ) { }
 
     async sendMessage(senderId: string, receiverId: string, content: string): Promise<Message> {
-        const { studentId } = await this.assertChatParticipants(senderId, receiverId);
-        // Cualquier alumno con el curso activo puede escribirle a su docente:
-        // el chat ya no es un beneficio exclusivo de Premium.
-        await this.assertSharedActiveCourse(studentId, senderId === studentId ? receiverId : senderId);
+        await this.assertCanChat(senderId, receiverId);
 
         const message = this.messagesRepository.create({ senderId, receiverId, content });
         return this.messagesRepository.save(message);
     }
 
     async getConversation(userId: string, otherUserId: string): Promise<Message[]> {
-        const { studentId, teacherId } = await this.assertChatParticipants(userId, otherUserId);
-        await this.assertSharedActiveCourse(studentId, teacherId);
+        await this.assertCanChat(userId, otherUserId);
 
         return this.messagesRepository.find({
             where: [
@@ -47,8 +43,7 @@ export class ChatService {
     }
 
     async markConversationAsRead(userId: string, otherUserId: string): Promise<number> {
-        const { studentId, teacherId } = await this.assertChatParticipants(userId, otherUserId);
-        await this.assertSharedActiveCourse(studentId, teacherId);
+        await this.assertCanChat(userId, otherUserId);
 
         const result = await this.messagesRepository.update(
             { senderId: otherUserId, receiverId: userId, readAt: IsNull() },
@@ -60,9 +55,6 @@ export class ChatService {
     async getUnreadCount(userId: string): Promise<number> {
         const user = await this.usersRepository.findOne({ where: { id: userId } });
         if (!user) throw new NotFoundException(`Usuario con id ${userId} no encontrado`);
-        if (user.role === UserRole.ADMIN) {
-            throw new ForbiddenException('Los administradores no participan del chat');
-        }
 
         return this.messagesRepository.count({
             where: { receiverId: userId, readAt: IsNull() },
@@ -75,23 +67,28 @@ export class ChatService {
         });
     }
     /**
-     * Con quién puede chatear el usuario: los mismos pares que después
-     * aceptan assertChatParticipants + assertSharedActiveCourse. Para un
-     * alumno, los docentes de sus cursos activos; para un docente, los
-     * alumnos inscriptos (activos) en sus cursos. Ordenado por el mensaje
-     * más reciente; los contactos sin mensajes van al final.
+     * Con quién puede chatear el usuario: los mismos pares que después acepta
+     * assertCanChat. Para un alumno, los docentes de sus cursos activos; para
+     * un docente, los alumnos inscriptos (activos) en sus cursos más los
+     * admins; para un admin, todos los docentes activos (con sus cursos, para
+     * saber de quién se trata). Ordenado por el mensaje más reciente; los
+     * contactos sin mensajes van al final.
      */
     async getContacts(userId: string): Promise<ChatContactDto[]> {
         const user = await this.usersRepository.findOne({ where: { id: userId } });
         if (!user) throw new NotFoundException(`Usuario con id ${userId} no encontrado`);
-        if (user.role === UserRole.ADMIN) {
-            throw new ForbiddenException('Los administradores no participan del chat');
-        }
 
-        const contacts =
-            user.role === UserRole.TEACHER
-                ? await this.collectStudentsOfTeacher(userId)
-                : await this.collectTeachersOfStudent(userId);
+        let contacts: Map<string, ContactAccumulator>;
+        if (user.role === UserRole.ADMIN) {
+            contacts = await this.collectTeachersForAdmin();
+        } else if (user.role === UserRole.TEACHER) {
+            contacts = await this.collectStudentsOfTeacher(userId);
+            for (const admin of await this.findActiveUsers(UserRole.ADMIN)) {
+                contacts.set(admin.id, { contact: admin, courses: [] });
+            }
+        } else {
+            contacts = await this.collectTeachersOfStudent(userId);
+        }
 
         const result = await Promise.all(
             [...contacts.values()].map(async ({ contact, courses }) => ({
@@ -144,6 +141,30 @@ export class ChatService {
         return contacts;
     }
 
+    private async collectTeachersForAdmin(): Promise<Map<string, ContactAccumulator>> {
+        const teachers = await this.usersRepository.find({
+            where: { role: UserRole.TEACHER, status: UserStatus.ACTIVE },
+            relations: { coursesCreated: true },
+            order: { name: 'ASC' },
+        });
+
+        const contacts = new Map<string, ContactAccumulator>();
+        for (const teacher of teachers) {
+            contacts.set(teacher.id, {
+                contact: teacher,
+                courses: (teacher.coursesCreated ?? []).filter((course) => course.isActive),
+            });
+        }
+        return contacts;
+    }
+
+    private findActiveUsers(role: UserRole): Promise<User[]> {
+        return this.usersRepository.find({
+            where: { role, status: UserStatus.ACTIVE },
+            order: { name: 'ASC' },
+        });
+    }
+
     private addContact(contacts: Map<string, ContactAccumulator>, contact: User, course: Course): void {
         const entry = contacts.get(contact.id) ?? { contact, courses: [] };
         if (!entry.courses.some((c) => c.id === course.id)) entry.courses.push(course);
@@ -164,28 +185,38 @@ export class ChatService {
         return last ? { content: last.content, senderId: last.senderId, createdAt: last.createdAt } : null;
     }
 
-    private async assertChatParticipants(
-        firstUserId: string,
-        secondUserId: string,
-    ): Promise<{ studentId: string; teacherId: string }> {
+    /**
+     * Pares permitidos: alumno↔docente (con un curso activo en común) y
+     * admin↔docente (soporte interno, sin condición de curso). Admin↔alumno
+     * y admin↔admin no: el alumno se comunica con su docente, no con la
+     * administración. Cualquier alumno con el curso activo puede escribirle a
+     * su docente: el chat no es un beneficio exclusivo de Premium.
+     */
+    private async assertCanChat(firstUserId: string, secondUserId: string): Promise<void> {
         const [firstUser, secondUser] = await Promise.all([
             this.usersRepository.findOne({ where: { id: firstUserId } }),
             this.usersRepository.findOne({ where: { id: secondUserId } }),
         ]);
 
         if (!firstUser) throw new NotFoundException(`Usuario con id ${firstUserId} no encontrado`);
-        if (!secondUser) throw new NotFoundException(`Usuario con id ${secondUserId} no encontrado`);
-
-        const validPair =
-            (firstUser.role === UserRole.STUDENT && secondUser.role === UserRole.TEACHER) ||
-            (firstUser.role === UserRole.TEACHER && secondUser.role === UserRole.STUDENT);
-        if (!validPair) {
-            throw new ForbiddenException('El chat solo está permitido entre alumnos y profesores');
+        if (!secondUser || secondUser.status !== UserStatus.ACTIVE) {
+            throw new NotFoundException(`Usuario con id ${secondUserId} no encontrado`);
         }
 
-        return firstUser.role === UserRole.STUDENT
-            ? { studentId: firstUser.id, teacherId: secondUser.id }
-            : { studentId: secondUser.id, teacherId: firstUser.id };
+        const roles = new Set([firstUser.role, secondUser.role]);
+        const isPair = (a: UserRole, b: UserRole) => roles.size === 2 && roles.has(a) && roles.has(b);
+
+        if (isPair(UserRole.ADMIN, UserRole.TEACHER)) return;
+
+        if (isPair(UserRole.STUDENT, UserRole.TEACHER)) {
+            const [student, teacher] =
+                firstUser.role === UserRole.STUDENT ? [firstUser, secondUser] : [secondUser, firstUser];
+            return this.assertSharedActiveCourse(student.id, teacher.id);
+        }
+
+        throw new ForbiddenException(
+            'El chat sólo está permitido entre alumnos y docentes, o entre docentes y administradores',
+        );
     }
 
     private async assertSharedActiveCourse(studentId: string, teacherId: string): Promise<void> {
