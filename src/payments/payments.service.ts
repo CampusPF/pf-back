@@ -97,10 +97,16 @@ export class PaymentsService {
     ): Promise<{ clientSecret: string }> {
         const course = await this.coursesRepository.findOne({
             where: { id: courseId },
-            relations: { instructor: true },
+            relations: { instructor: true, modules: true },
         });
         if (!course) {
             throw new NotFoundException(`Curso con id ${courseId} no encontrado`);
+        }
+        // Un curso publicado sin módulos se mostraba con "Comprar": se cobraba
+        // algo vacío. El front ya no ofrece el botón (EnrollCTA); esto es la
+        // regla de verdad.
+        if (!course.modules?.length) {
+            throw new ConflictException('Este curso todavía no tiene contenido: no se puede comprar.');
         }
         if (course.priceInCents <= 0) {
             throw new BadRequestException('Este curso es gratis: no requiere pago.');

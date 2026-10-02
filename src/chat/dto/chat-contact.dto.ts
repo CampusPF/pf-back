@@ -11,7 +11,7 @@ export class ChatContactUserDto {
     @ApiProperty({ example: 'https://res.cloudinary.com/.../avatar.png', nullable: true, type: String })
     avatarUrl: string | null;
 
-    @ApiProperty({ enum: [UserRole.STUDENT, UserRole.TEACHER] })
+    @ApiProperty({ enum: [UserRole.STUDENT, UserRole.TEACHER, UserRole.ADMIN] })
     role: UserRole;
 }
 

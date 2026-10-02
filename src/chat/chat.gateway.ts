@@ -14,7 +14,7 @@ import { JwtService } from '@nestjs/jwt';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
 import { Server, Socket } from 'socket.io';
-import { User, UserRole, UserStatus } from '../users/entities/user.entity';
+import { User, UserStatus } from '../users/entities/user.entity';
 import { ChatService } from './chat.service';
 import { Message } from './entities/message.entity';
 import { PushService } from '../push/push.service';
@@ -71,8 +71,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             const user = await this.usersRepository.findOne({ where: { id: payload.sub } });
             // El handshake no pasa por JwtStrategy: el chequeo de cuenta
             // activa tiene que estar también acá, o una cuenta dada de baja
-            // seguiría chateando con su token.
-            if (!user || user.status !== UserStatus.ACTIVE || user.role === UserRole.ADMIN) {
+            // seguiría chateando con su token. Los admins entran (chatean con
+            // docentes); qué pares pueden hablar lo decide ChatService.
+            if (!user || user.status !== UserStatus.ACTIVE) {
                 client.disconnect(true);
                 return;
             }

@@ -58,8 +58,9 @@ class FakePaymentsRepository {
     }
 }
 
-const FREE_COURSE = { id: 'course-free', priceInCents: 0, currency: 'usd' };
-const PAID_COURSE = { id: 'course-paid', priceInCents: 4999, currency: 'usd' };
+const FREE_COURSE = { id: 'course-free', priceInCents: 0, currency: 'usd', modules: [{ id: 'module-1' }] };
+const PAID_COURSE = { id: 'course-paid', priceInCents: 4999, currency: 'usd', modules: [{ id: 'module-1' }] };
+const EMPTY_PAID_COURSE = { id: 'course-empty', priceInCents: 4999, currency: 'usd', modules: [] };
 
 function makeService() {
     let intentCounter = 0;
@@ -95,7 +96,7 @@ function makeService() {
 
     const coursesRepo = {
         findOne: jest.fn(async ({ where }: any) =>
-            [FREE_COURSE, PAID_COURSE].find((c) => c.id === where.id) ?? null,
+            [FREE_COURSE, PAID_COURSE, EMPTY_PAID_COURSE].find((c) => c.id === where.id) ?? null,
         ),
     };
 
@@ -149,6 +150,17 @@ describe('PaymentsService.createIntent', () => {
         await expect(
             service.createIntent('user-1', { courseId: FREE_COURSE.id }),
         ).rejects.toBeInstanceOf(BadRequestException);
+
+        expect(paymentIntentsCreate).not.toHaveBeenCalled();
+        expect(paymentsRepo.rows).toHaveLength(0);
+    });
+
+    it('curso pago sin módulos → 409, no crea PaymentIntent', async () => {
+        const { service, paymentIntentsCreate, paymentsRepo } = makeService();
+
+        await expect(
+            service.createIntent('user-1', { courseId: EMPTY_PAID_COURSE.id }),
+        ).rejects.toBeInstanceOf(ConflictException);
 
         expect(paymentIntentsCreate).not.toHaveBeenCalled();
         expect(paymentsRepo.rows).toHaveLength(0);

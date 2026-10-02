@@ -24,9 +24,8 @@ export class ChatController {
        las rutas GET en el orden en que se declaran, y 'contacts' matchearía
        como si fuera un otherUserId si quedara después. */
     @Get('contacts')
-    @ApiOperation({ summary: 'Listar con quién puedo chatear (docentes o alumnos, según mi rol)' })
+    @ApiOperation({ summary: 'Listar con quién puedo chatear (docentes, alumnos o admins, según mi rol)' })
     @ApiResponse({ status: 200, description: 'Contactos con último mensaje y no leídos', type: ChatContactDto, isArray: true })
-    @ApiResponse({ status: 403, description: 'Los administradores no participan del chat' })
     getContacts(@CurrentUser('id') userId: string): Promise<ChatContactDto[]> {
         return this.chatService.getContacts(userId);
     }
@@ -58,7 +57,6 @@ export class ChatController {
     @Get('unread-count')
     @ApiOperation({ summary: 'Contar mis mensajes no leídos' })
     @ApiResponse({ status: 200, description: 'Cantidad de mensajes no leídos' })
-    @ApiResponse({ status: 403, description: 'Los administradores no participan del chat' })
     @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
     getUnreadCount(@CurrentUser('id') userId: string): Promise<number> {
         return this.chatService.getUnreadCount(userId);
