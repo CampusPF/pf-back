@@ -87,6 +87,7 @@ export const envValidationSchema = Joi.object({
   THROTTLE_LIMIT: Joi.number().integer().positive().default(100),
   THROTTLE_AUTH_LIMIT: Joi.number().integer().positive().default(10),
   THROTTLE_AI_LIMIT: Joi.number().integer().positive().default(20),
+  THROTTLE_SPEECH_LIMIT: Joi.number().integer().positive().default(15),
 
   // --- Google OAuth ---
   GOOGLE_CLIENT_ID: requiredInProd(Joi.string()),
@@ -124,6 +125,9 @@ export const envValidationSchema = Joi.object({
   // Reusa GROQ_API_KEY. Sin key, sólo corre la lista local de groserías
   // (src/moderation/profanity-filter.ts); con key, además la IA.
   MODERATION_MODEL: Joi.string().default('openai/gpt-oss-safeguard-20b'),
+  // Dictado por voz (src/speech). Reusa GROQ_API_KEY; sin key, POST
+  // /speech/transcriptions responde 503 y el front esconde el micrófono.
+  SPEECH_MODEL: Joi.string().default('whisper-large-v3-turbo'),
 
   // NOTA: el proyecto arrancó con notas para Mercado Pago pero el equipo fue
   // con Stripe (ver bloque STRIPE_* arriba). Las variables MP_* quedaron sin

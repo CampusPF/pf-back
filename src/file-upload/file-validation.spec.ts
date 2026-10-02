@@ -4,6 +4,8 @@ import {
     PDF_UPLOAD_OPTIONS,
     MAX_IMAGE_BYTES,
     MAX_PDF_BYTES,
+    AUDIO_UPLOAD_OPTIONS,
+    MAX_AUDIO_BYTES,
     assertMagicBytes,
     assertFilePresent,
 } from './file-validation';
@@ -129,5 +131,51 @@ describe('opciones de multer', () => {
         });
         expect(MAX_IMAGE_BYTES).toBe(5 * 1024 * 1024);
         expect(MAX_PDF_BYTES).toBe(20 * 1024 * 1024);
+    });
+
+    /* MediaRecorder manda el codec como parámetro del tipo; lo que se valida
+       es el tipo base. */
+    it('audio: acepta lo que graba cada navegador, con o sin ;codecs=', () => {
+        expect(runFilter(AUDIO_UPLOAD_OPTIONS, 'audio/webm;codecs=opus')).toBeNull();
+        expect(runFilter(AUDIO_UPLOAD_OPTIONS, 'audio/webm')).toBeNull();
+        expect(runFilter(AUDIO_UPLOAD_OPTIONS, 'audio/mp4')).toBeNull();
+        expect(runFilter(AUDIO_UPLOAD_OPTIONS, 'audio/ogg; codecs=opus')).toBeNull();
+        expect(runFilter(AUDIO_UPLOAD_OPTIONS, 'video/mp4')).toBeInstanceOf(BadRequestException);
+        expect(runFilter(AUDIO_UPLOAD_OPTIONS, 'application/pdf')).toBeInstanceOf(
+            BadRequestException,
+        );
+        expect(AUDIO_UPLOAD_OPTIONS.limits).toEqual({ fileSize: MAX_AUDIO_BYTES, files: 1 });
+    });
+});
+
+describe('assertMagicBytes (audio)', () => {
+    const WEBM = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42]);
+    const OGG = Buffer.from('OggS\0\x02', 'binary');
+    const M4A = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypM4A ', 'ascii')]);
+    const WAV = Buffer.concat([
+        Buffer.from('RIFF', 'ascii'),
+        Buffer.from([0, 0, 0, 0]),
+        Buffer.from('WAVE', 'ascii'),
+    ]);
+    const MP3 = Buffer.from('ID3\x04\0', 'binary');
+
+    it.each([
+        ['WebM', WEBM],
+        ['OGG', OGG],
+        ['M4A (Safari)', M4A],
+        ['WAV', WAV],
+        ['MP3', MP3],
+    ])('acepta %s', (_label, buffer) => {
+        expect(() => assertMagicBytes(fakeFile('audio/webm', buffer), 'audio')).not.toThrow();
+    });
+
+    it('rechaza un PDF disfrazado de audio/webm', () => {
+        expect(() => assertMagicBytes(fakeFile('audio/webm', PDF), 'audio')).toThrow(
+            BadRequestException,
+        );
+    });
+
+    it('el mensaje de "falta el archivo" nombra el campo pedido', () => {
+        expect(() => assertFilePresent(undefined, 'audio')).toThrow(/"audio"/);
     });
 });
