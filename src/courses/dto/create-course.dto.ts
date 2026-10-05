@@ -5,7 +5,6 @@ import {
     IsOptional,
     IsUUID,
     MaxLength,
-    IsUrl,
     IsEnum,
     IsInt,
     Min,
@@ -49,20 +48,13 @@ export class CreateCourseDto {
     @IsEnum(CourseDifficulty)
     difficulty?: CourseDifficulty;
 
-    @ApiPropertyOptional({
-        example: 'https://cdn.campuslite.com/covers/curso-nestjs.png',
-        description: 'URL de la imagen de portada',
-    })
-    // TODO(seguridad): hoy la portada llega como URL ya subida en otro lado.
-    // No hay ningún endpoint de upload en esta API. Si se agrega uno (p. ej.
-    // Cloudinary), tiene que: validar mimetype y tamaño con el fileFilter y
-    // limits.fileSize de Multer ANTES de subir (rechazar con 400 lo que no
-    // sea imagen), firmar la subida en el backend con el api_secret leído de
-    // env (nada de upload presets unsigned) y no devolver nunca el api_secret
-    // al front.
-    @IsOptional()
-    @IsUrl()
-    imageUrl?: string;
+    /* La portada NO se manda como URL. Se sube con POST /courses/:id/image
+       (Multer valida mimetype y tamaño antes de subir, y la firma la hace el
+       back con el api_secret de env). Aceptar una URL arbitraria acá dejaba
+       que cualquier docente publicara en el catálogo una imagen alojada en
+       otro lado, y además el PATCH pisaba `imageUrl` sin tocar
+       `imagePublicId`: la anterior quedaba huérfana en Cloudinary para
+       siempre. El front ya no manda este campo desde que existe el uploader. */
 
     @ApiProperty({
         example: '8a01e21a-a392-4e93-bf76-8d1f4a4ef650',
