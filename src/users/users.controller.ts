@@ -11,6 +11,7 @@ import {
   ParseUUIDPipe,
   UseInterceptors,
   UploadedFile,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
@@ -31,6 +32,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -56,8 +58,20 @@ export class UsersController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  findAll() {
-    return this.usersService.findAll();
+  @ApiOperation({
+    summary: 'Listar usuarios (sólo admin)',
+    description:
+      'Por defecto no incluye a los dados de baja (status "deleted"). Con ' +
+      'includeDeleted=true vienen todos, para poder restaurarlos desde el panel.',
+  })
+  @ApiQuery({
+    name: 'includeDeleted',
+    required: false,
+    type: Boolean,
+    description: 'Si es "true", incluye también los usuarios dados de baja',
+  })
+  findAll(@Query('includeDeleted') includeDeleted?: string) {
+    return this.usersService.findAll(includeDeleted === 'true');
   }
 
   /* Las rutas literales `me` van declaradas ANTES de las paramétricas `:id`:
