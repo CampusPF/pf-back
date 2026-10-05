@@ -62,7 +62,8 @@ export class CoursesService {
       slug,
       description: dto.description,
       difficulty: dto.difficulty,
-      imageUrl: dto.imageUrl,
+      // La portada se sube aparte (POST /courses/:id/image): ver el comentario
+      // en CreateCourseDto. Al crear no hay id todavía, así que no hay imagen.
       priceInCents: dto.priceInCents ?? 0,
       currency: dto.currency ?? 'usd',
       category,
@@ -89,6 +90,78 @@ export class CoursesService {
     if (!course) {
       throw new NotFoundException(`Curso con id ${id} no encontrado`);
     }
+
+    return course;
+  }
+
+  /**
+   * El curso con su temario completo: módulos vivos, cada uno con sus
+   * lecciones vivas, todo ordenado.
+   *
+   * Es público a propósito. El temario es lo que decide una compra, y antes
+   * sin sesión sólo se veían los títulos de los módulos (el front tenía que
+   * pedir `GET /lessons?moduleId=` por cada módulo, que exige login: N
+   * requests para alguien logueado y nada para una visita).
+   *
+   * No filtra nada por acceso ni hace falta: `content` y `videoUrl` son
+   * `select: false` en la entidad Lesson, así que ninguna query los trae
+   * salvo `LessonsService.findOne`, que es donde `LessonsAccessService`
+   * decide. De acá sólo salen título, duración, orden y si es de muestra.
+   *
+   * Aparte de `findOne` porque ese lo usan las escrituras (update, remove,
+   * updateImage) y el admin, que necesitan los módulos inactivos también y no
+   * tienen por qué cargar el temario entero.
+   */
+  async findOneWithSyllabus(id: string): Promise<Course> {
+    const course = await this.coursesRepository.findOne({
+      where: { id },
+      relations: { category: true, instructor: true, modules: { lessons: true } },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Curso con id ${id} no encontrado`);
+    }
+
+    return this.withLiveSyllabus(course);
+  }
+
+  /**
+   * Mismo curso que `findOneWithSyllabus`, pero buscado por slug.
+   *
+   * El front navega por slug (`/courses/:slug`): sin esto tenía que bajar el
+   * catálogo entero en cada visita sólo para traducir slug → id.
+   */
+  async findBySlug(slug: string): Promise<Course> {
+    const course = await this.coursesRepository.findOne({
+      // `isActive: true` a propósito: esta ruta es la que abre el detalle
+      // público. Antes el front resolvía el slug contra `GET /courses`, que ya
+      // filtra los inactivos, así que un curso dado de baja daba "no
+      // encontrado"; sin esta condición pasaría a ser visible.
+      where: { slug, isActive: true },
+      relations: { category: true, instructor: true, modules: { lessons: true } },
+    });
+
+    if (!course) {
+      throw new NotFoundException(`Curso con slug ${slug} no encontrado`);
+    }
+
+    return this.withLiveSyllabus(course);
+  }
+
+  /* El filtrado va en memoria y no en el `where`: filtrar una relación en
+     TypeORM condiciona también qué cursos vuelven (un curso sin módulos vivos
+     desaparecería en vez de venir con el temario vacío). Es un curso por
+     request, no un listado. */
+  private withLiveSyllabus(course: Course): Course {
+    course.modules = (course.modules ?? [])
+      .filter((courseModule) => courseModule.isActive)
+      .sort((a, b) => a.order - b.order)
+      .map((courseModule) => {
+        courseModule.lessons = (courseModule.lessons ?? [])
+          .filter((lesson) => lesson.isActive)
+          .sort((a, b) => a.order - b.order);
+        return courseModule;
+      });
 
     return course;
   }
@@ -129,7 +202,6 @@ export class CoursesService {
       title: dto.title ?? course.title,
       description: dto.description ?? course.description,
       difficulty: dto.difficulty ?? course.difficulty,
-      imageUrl: dto.imageUrl ?? course.imageUrl,
       priceInCents: dto.priceInCents ?? course.priceInCents,
       currency: dto.currency ?? course.currency,
     });
