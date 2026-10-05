@@ -87,16 +87,38 @@ export class CoursesController {
     return this.courseStatsService.withStats(courses);
   }
 
+  /* La ruta literal `slug/:slug` va ANTES de la paramétrica `:id`: Nest
+     matchea por orden y, al revés, `:id` se tragaría "slug". */
+  @Get('slug/:slug')
+  @Public()
+  @ApiOperation({
+    summary: 'Obtener un curso por slug (mismo contenido que por ID)',
+    description:
+      'El front navega por slug; sin esta ruta tenía que bajar el catálogo ' +
+      'entero para traducir slug → id en cada visita al detalle.',
+  })
+  @ApiResponse({ status: 404, description: 'Curso no encontrado' })
+  async findBySlug(@Param('slug') slug: string) {
+    const [course] = await this.courseStatsService.withStats([
+      await this.coursesService.findBySlug(slug),
+    ]);
+    return course;
+  }
+
   @Get(':id')
   @Public()
   @ApiOperation({
     summary:
-      'Obtener un curso por ID (con ratingAverage, reviewsCount, studentsCount, lessonsCount y totalDurationMinutes)',
+      'Obtener un curso por ID (con el temario completo, ratingAverage, reviewsCount, studentsCount, lessonsCount y totalDurationMinutes)',
+    description:
+      'Incluye los módulos vivos con sus lecciones vivas (título, duración, ' +
+      'orden y isFree). El contenido de cada lección (content/videoUrl) NO ' +
+      'viaja acá: eso sale de GET /lessons/:id, con su control de acceso.',
   })
   @ApiResponse({ status: 404, description: 'Curso no encontrado' })
   async findOne(@Param('id') id: string) {
     const [course] = await this.courseStatsService.withStats([
-      await this.coursesService.findOne(id),
+      await this.coursesService.findOneWithSyllabus(id),
     ]);
     return course;
   }

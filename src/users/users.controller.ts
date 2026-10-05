@@ -11,6 +11,7 @@ import {
   ParseUUIDPipe,
   UseInterceptors,
   UploadedFile,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
@@ -31,6 +32,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -56,8 +58,20 @@ export class UsersController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  findAll() {
-    return this.usersService.findAll();
+  @ApiOperation({
+    summary: 'Listar usuarios (sólo admin)',
+    description:
+      'Por defecto no incluye a los dados de baja (status "deleted"). Con ' +
+      'includeDeleted=true vienen todos, para poder restaurarlos desde el panel.',
+  })
+  @ApiQuery({
+    name: 'includeDeleted',
+    required: false,
+    type: Boolean,
+    description: 'Si es "true", incluye también los usuarios dados de baja',
+  })
+  findAll(@Query('includeDeleted') includeDeleted?: string) {
+    return this.usersService.findAll(includeDeleted === 'true');
   }
 
   /* Las rutas literales `me` van declaradas ANTES de las paramétricas `:id`:
@@ -183,7 +197,17 @@ export class UsersController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  remove(@Param('id') id: string) {
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') currentUserId: string,
+  ) {
+    // El panel ya deshabilita el botón en la propia fila, pero eso no protege
+    // la API: un admin que se da de baja a sí mismo queda afuera al instante
+    // (JwtStrategy corta todo lo que no esté "active") y nadie puede restaurarlo
+    // si era el único admin.
+    if (id === currentUserId) {
+      throw new ForbiddenException('No podés dar de baja tu propia cuenta');
+    }
     return this.usersService.remove(id);
   }
 }
