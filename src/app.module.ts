@@ -38,6 +38,7 @@ import { AchievementsModule } from './achievements/achievements.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { AdminStatsModule } from './admin-stats/admin-stats.module';
 import { SpeechModule } from './speech/speech.module';
+import { ForumsModule } from './forums/forums.module';
 
 
 
@@ -109,6 +110,7 @@ import { SpeechModule } from './speech/speech.module';
     LessonsModule,
     CourseEnrollmentsModule,
     CourseReviewsModule,
+    ForumsModule,
     LessonProgressModule,
     UserActivityModule,
     ProgressTrackingModule,
