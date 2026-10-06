@@ -13,6 +13,7 @@ import { EmailNotificationsListener } from './email-notifications.listener';
 import { RemindersService } from './reminders.service';
 import { UnsubscribeTokenService } from './unsubscribe-token.service';
 import { NotificationsController } from './notifications.controller';
+import { NotificationsService } from './notifications.service';
 
 /**
  * Notificaciones por mail (HTML generado en src/mail/templates):
@@ -44,6 +45,9 @@ import { NotificationsController } from './notifications.controller';
         EmailNotificationsListener,
         RemindersService,
         UnsubscribeTokenService,
+        NotificationsService,
     ],
+    // Campanita: otros módulos (foros, etc.) avisan al usuario con esto.
+    exports: [NotificationsService],
 })
 export class NotificationsModule { }
