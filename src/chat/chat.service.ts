@@ -66,13 +66,11 @@ export class ChatService {
             where: { receiverId, senderId, readAt: IsNull() },
         });
     }
+
     /**
-     * Con quién puede chatear el usuario: los mismos pares que después acepta
-     * assertCanChat. Para un alumno, los docentes de sus cursos activos; para
-     * un docente, los alumnos inscriptos (activos) en sus cursos más los
-     * admins; para un admin, todos los docentes activos (con sus cursos, para
-     * saber de quién se trata). Ordenado por el mensaje más reciente; los
-     * contactos sin mensajes van al final.
+     * Admins see active teachers; other users see instructors of their active
+     * enrollments and learners in courses they instruct. Teachers also see admins.
+     * Ordered by the most recent message; contacts without messages go last.
      */
     async getContacts(userId: string): Promise<ChatContactDto[]> {
         const user = await this.usersRepository.findOne({ where: { id: userId } });
@@ -83,8 +81,9 @@ export class ChatService {
             contacts = await this.collectTeachersForAdmin();
         } else if (user.role === UserRole.TEACHER) {
             contacts = await this.collectStudentsOfTeacher(userId);
+            this.mergeContacts(contacts, await this.collectTeachersOfStudent(userId));
             for (const admin of await this.findActiveUsers(UserRole.ADMIN)) {
-                contacts.set(admin.id, { contact: admin, courses: [] });
+                if (!contacts.has(admin.id)) contacts.set(admin.id, { contact: admin, courses: [] });
             }
         } else {
             contacts = await this.collectTeachersOfStudent(userId);
@@ -120,7 +119,6 @@ export class ChatService {
 
         const contacts = new Map<string, ContactAccumulator>();
         for (const { course } of enrollments) {
-            // Mismo criterio que assertChatParticipants: sólo alumno↔docente.
             if (course?.instructor?.role !== UserRole.TEACHER) continue;
             this.addContact(contacts, course.instructor, course);
         }
@@ -135,10 +133,23 @@ export class ChatService {
 
         const contacts = new Map<string, ContactAccumulator>();
         for (const { student, course } of enrollments) {
-            if (student?.role !== UserRole.STUDENT || !course) continue;
+            if (!student || student.role === UserRole.ADMIN || student.id === teacherId || !course) continue;
             this.addContact(contacts, student, course);
         }
         return contacts;
+    }
+
+    private mergeContacts(
+        target: Map<string, ContactAccumulator>,
+        source: Map<string, ContactAccumulator>,
+    ): void {
+        for (const { contact, courses } of source.values()) {
+            if (courses.length === 0 && !target.has(contact.id)) {
+                target.set(contact.id, { contact, courses: [] });
+                continue;
+            }
+            for (const course of courses) this.addContact(target, contact, course);
+        }
     }
 
     private async collectTeachersForAdmin(): Promise<Map<string, ContactAccumulator>> {
@@ -185,13 +196,7 @@ export class ChatService {
         return last ? { content: last.content, senderId: last.senderId, createdAt: last.createdAt } : null;
     }
 
-    /**
-     * Pares permitidos: alumno↔docente (con un curso activo en común) y
-     * admin↔docente (soporte interno, sin condición de curso). Admin↔alumno
-     * y admin↔admin no: el alumno se comunica con su docente, no con la
-     * administración. Cualquier alumno con el curso activo puede escribirle a
-     * su docente: el chat no es un beneficio exclusivo de Premium.
-     */
+    /** Admin↔teacher is support chat; all other pairs require an active enrollment relationship. */
     private async assertCanChat(firstUserId: string, secondUserId: string): Promise<void> {
         const [firstUser, secondUser] = await Promise.all([
             this.usersRepository.findOne({ where: { id: firstUserId } }),
@@ -204,32 +209,50 @@ export class ChatService {
         }
 
         const roles = new Set([firstUser.role, secondUser.role]);
-        const isPair = (a: UserRole, b: UserRole) => roles.size === 2 && roles.has(a) && roles.has(b);
 
-        if (isPair(UserRole.ADMIN, UserRole.TEACHER)) return;
+        // Admin ↔ teacher: soporte interno, sin condición de curso.
+        if (roles.size === 2 && roles.has(UserRole.ADMIN) && roles.has(UserRole.TEACHER)) return;
 
-        if (isPair(UserRole.STUDENT, UserRole.TEACHER)) {
-            const [student, teacher] =
-                firstUser.role === UserRole.STUDENT ? [firstUser, secondUser] : [secondUser, firstUser];
-            return this.assertSharedActiveCourse(student.id, teacher.id);
+        // Admin ↔ admin, admin ↔ alumno: siempre bloqueados.
+        if (roles.has(UserRole.ADMIN)) {
+            throw new ForbiddenException(
+                'El chat está permitido con el docente de un curso en el que estás inscripto (o con un alumno inscripto en tu curso).',
+            );
         }
 
-        throw new ForbiddenException(
-            'El chat sólo está permitido entre alumnos y docentes, o entre docentes y administradores',
-        );
+        // Alumno ↔ alumno: siempre bloqueado.
+        if (firstUser.role === UserRole.STUDENT && secondUser.role === UserRole.STUDENT) {
+            throw new ForbiddenException(
+                'El chat está permitido con el docente de un curso en el que estás inscripto (o con un alumno inscripto en tu curso).',
+            );
+        }
+
+        // Cualquier otro par válido pasa solo si hay inscripción activa en cualquier dirección.
+        await this.assertShareCourseEnrollment(firstUser.id, secondUser.id);
     }
 
-    private async assertSharedActiveCourse(studentId: string, teacherId: string): Promise<void> {
+    private async assertShareCourseEnrollment(
+        firstUserId: string,
+        secondUserId: string,
+    ): Promise<void> {
         const enrollment = await this.enrollmentsRepository.findOne({
-            where: {
-                student: { id: studentId },
-                course: { instructor: { id: teacherId } },
-                isActive: true,
-            },
+            where: [
+                {
+                    student: { id: firstUserId },
+                    course: { instructor: { id: secondUserId } },
+                    isActive: true,
+                },
+                {
+                    student: { id: secondUserId },
+                    course: { instructor: { id: firstUserId } },
+                    isActive: true,
+                },
+            ],
         });
-
         if (!enrollment) {
-            throw new ForbiddenException('Solo podés chatear con profesores de tus cursos activos');
+            throw new ForbiddenException(
+                'El chat está permitido con el docente de un curso en el que estás inscripto (o con un alumno inscripto en tu curso).',
+            );
         }
     }
 }

@@ -49,9 +49,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     ) { }
 
     private readonly focusedConversations = new Map<string, string>();
+    private readonly typingTo = new Map<string, string>();
+    private readonly typingTimers = new Map<string, NodeJS.Timeout>();
 
     handleDisconnect(client: Socket): void {
         this.focusedConversations.delete(client.id);
+
+        const socketUserId = typeof client.data.userId === 'string' ? client.data.userId : null;
+        const receiverId = this.typingTo.get(client.id);
+        const timer = this.typingTimers.get(client.id);
+
+        if (timer) {
+            clearTimeout(timer);
+            this.typingTimers.delete(client.id);
+        }
+
+        if (receiverId && socketUserId) {
+            this.server.to(this.userRoom(receiverId)).emit('typing:update', { senderId: socketUserId, isTyping: false });
+            this.typingTo.delete(client.id);
+        }
     }
 
     async handleConnection(client: Socket): Promise<void> {
@@ -155,6 +171,83 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @SubscribeMessage('chat:blur')
     blurConversation(@ConnectedSocket() client: Socket): void {
         this.focusedConversations.delete(client.id);
+    }
+
+    @SubscribeMessage('typing:update')
+    async updateTyping(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() payload: unknown,
+    ): Promise<void> {
+        const userId = client.data.userId as string | undefined;
+        if (!userId) return;
+
+        if (typeof payload !== 'object' || payload === null) return;
+
+        const body = payload as Record<string, unknown>;
+        const receiverId = typeof body.receiverId === 'string' ? body.receiverId : '';
+        const isTyping = typeof body.isTyping === 'boolean' ? body.isTyping : null;
+
+        if (!isUUID(receiverId) || isTyping === null) return;
+
+        try {
+            await this.chatService.getConversation(userId, receiverId);
+        } catch {
+            return;
+        }
+
+        const socketId = client.id;
+        const currentReceiver = this.typingTo.get(socketId);
+
+        if (isTyping) {
+            if (currentReceiver === receiverId) {
+                const timer = this.typingTimers.get(socketId);
+                if (timer) {
+                    clearTimeout(timer);
+                }
+                const nextTimer = setTimeout(() => {
+                    const activeReceiver = this.typingTo.get(socketId);
+                    if (!activeReceiver) return;
+                    this.server.to(this.userRoom(activeReceiver)).emit('typing:update', {
+                        senderId: userId,
+                        isTyping: false,
+                    });
+                    this.typingTo.delete(socketId);
+                    this.typingTimers.delete(socketId);
+                }, 5000);
+                this.typingTimers.set(socketId, nextTimer);
+                return;
+            }
+
+            this.server.to(this.userRoom(receiverId)).emit('typing:update', { senderId: userId, isTyping: true });
+            this.typingTo.set(socketId, receiverId);
+
+            const existingTimer = this.typingTimers.get(socketId);
+            if (existingTimer) {
+                clearTimeout(existingTimer);
+            }
+
+            const nextTimer = setTimeout(() => {
+                const activeReceiver = this.typingTo.get(socketId);
+                if (!activeReceiver) return;
+                this.server.to(this.userRoom(activeReceiver)).emit('typing:update', {
+                    senderId: userId,
+                    isTyping: false,
+                });
+                this.typingTo.delete(socketId);
+                this.typingTimers.delete(socketId);
+            }, 5000);
+            this.typingTimers.set(socketId, nextTimer);
+            return;
+        }
+
+        const timer = this.typingTimers.get(socketId);
+        if (timer) {
+            clearTimeout(timer);
+            this.typingTimers.delete(socketId);
+        }
+
+        this.server.to(this.userRoom(receiverId)).emit('typing:update', { senderId: userId, isTyping: false });
+        this.typingTo.delete(socketId);
     }
 
     private readOtherUserId(payload: unknown): string | null {

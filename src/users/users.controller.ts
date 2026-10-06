@@ -197,7 +197,17 @@ export class UsersController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  remove(@Param('id') id: string) {
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') currentUserId: string,
+  ) {
+    // El panel ya deshabilita el botón en la propia fila, pero eso no protege
+    // la API: un admin que se da de baja a sí mismo queda afuera al instante
+    // (JwtStrategy corta todo lo que no esté "active") y nadie puede restaurarlo
+    // si era el único admin.
+    if (id === currentUserId) {
+      throw new ForbiddenException('No podés dar de baja tu propia cuenta');
+    }
     return this.usersService.remove(id);
   }
 }
