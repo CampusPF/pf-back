@@ -57,7 +57,21 @@ export const envValidationSchema = Joi.object({
   // --- Web Push (VAPID) ---
   VAPID_PUBLIC_KEY: requiredInProd(Joi.string()),
   VAPID_PRIVATE_KEY: requiredInProd(Joi.string()),
-  VAPID_SUBJECT: requiredInProd(Joi.string().uri()).default('mailto:ohverde@gmail.com'),
+  /* Contacto que usan los servicios de push (Google, Mozilla) si detectan un
+     abuso. `web-push` exige una URL https: o una dirección mailto:, así que un
+     email pelado ("equipo@ejemplo.com") NO sirve y tira abajo el arranque. El
+     mensaje lo dice explícitamente porque el de Joi ("must be a valid uri") no
+     deja claro que falta el prefijo. */
+  VAPID_SUBJECT: requiredInProd(
+    Joi.string().uri({ scheme: ['mailto', 'https'] }),
+  )
+    .default('mailto:campusia12@gmail.com')
+    .messages({
+      'string.uri':
+        'VAPID_SUBJECT tiene que ser "mailto:alguien@dominio.com" o una URL https, no un email suelto.',
+      'string.uriCustomScheme':
+        'VAPID_SUBJECT tiene que ser "mailto:alguien@dominio.com" o una URL https, no un email suelto.',
+    }),
 
   /* --- Cron externo (POST /tasks/...) ---
      Opcional: sin esta variable los endpoints de tareas responden 404 y sólo

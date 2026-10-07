@@ -53,7 +53,17 @@ worker la gente se re-suscribe sola al volver a entrar, pero igual perdés a
 quien no vuelva.
 
 `VAPID_SUBJECT` es el contacto que usan Google/Mozilla si hay un abuso: tiene
-que ser una casilla que alguien del equipo lea.
+que ser una casilla que alguien del equipo lea. **Va con el prefijo `mailto:`**
+(o ser una URL `https:`); `web-push` no acepta un email suelto y el back no
+arranca:
+
+```
+VAPID_SUBJECT=mailto:campusia12@gmail.com      ✅
+VAPID_SUBJECT=campusia12@gmail.com             ❌ Config validation error
+```
+
+Cambiar el subject es seguro y no invalida ninguna suscripción — eso sólo pasa
+al cambiar las **claves**.
 
 ### `CRON_SECRET` (nueva, opcional)
 
