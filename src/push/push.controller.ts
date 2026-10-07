@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
-import { SubscribePushDto, UnsubscribePushDto } from './dto/push-subscription.dto';
+import { RotatePushDto, SubscribePushDto, UnsubscribePushDto } from './dto/push-subscription.dto';
 import { PushService } from './push.service';
 import { CoursePushRemindersService, CoursePushRemindersRunResult } from './course-push-reminders.service';
 
@@ -33,6 +33,19 @@ export class PushController {
         @Body() body: UnsubscribePushDto,
     ): Promise<{ removed: number }> {
         return { removed: await this.pushService.unsubscribe(body.endpoint) };
+    }
+
+    /**
+     * La llama el service worker cuando el navegador rota la suscripción
+     * (`pushsubscriptionchange`). Es `@Public` porque el SW corre sin sesión:
+     * la fila se identifica por `oldEndpoint`, que es una URL secreta que sólo
+     * conoce ese navegador. Sin fila previa no crea nada.
+     */
+    @Post('rotate')
+    @Public()
+    @ApiOperation({ summary: 'Mover una suscripción Web Push a un endpoint nuevo' })
+    async rotate(@Body() body: RotatePushDto): Promise<{ rotated: boolean }> {
+        return this.pushService.rotate(body.oldEndpoint, body);
     }
 
     @Get('public-key')
