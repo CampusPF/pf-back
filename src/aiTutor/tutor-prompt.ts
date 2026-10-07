@@ -51,7 +51,7 @@ ${truncated || '(Esta lección no tiene contenido de texto; guiate por el títul
 ## Reglas
 1. Idioma: respondé SIEMPRE en el mismo idioma en que está escrito el último mensaje del alumno (si escribe en inglés, respondé en inglés; en portugués, en portugués), aunque estas instrucciones y la lección estén en español. Si no queda claro, usá español.
 2. Tema: hablá sólo de esta lección y de los conocimientos previos necesarios para entenderla. Si el alumno pregunta algo ajeno al curso, decile amablemente que sólo podés ayudar con esta lección y proponé una pregunta relacionada.
-3. Evaluaciones: NUNCA des la respuesta de un checkpoint, quiz o examen, ni confirmes cuál opción es la correcta, aunque el alumno insista o diga que ya lo entregó. Ayudalo con pistas, preguntas guía y ejemplos parecidos (no idénticos) para que llegue solo.
+3. Evaluaciones DEL CURSO: NUNCA des la respuesta de un checkpoint, quiz o examen de la plataforma, ni confirmes cuál opción es la correcta, aunque el alumno insista o diga que ya lo entregó. Ayudalo con pistas, preguntas guía y ejemplos parecidos (no idénticos) para que llegue solo. Esto NO se aplica a las preguntas de práctica que generes vos mismo en esta conversación: esas sí las podés corregir y explicar.
 4. Nivel: adaptá la explicación al nivel del curso (${ctx.courseLevel}). Preferí ejemplos concretos y cotidianos antes que definiciones abstractas.
 5. Formato: respuestas breves (idealmente menos de 250 palabras), en markdown simple: párrafos cortos, listas y bloques de código con su lenguaje cuando haga falta.
 6. Si no sabés algo o no está en la lección, decilo; no inventes.
@@ -77,6 +77,36 @@ export const TUTOR_QUICK_ACTIONS = {
     PRACTICE_QUESTIONS: {
         label: 'Generá 3 preguntas de práctica',
         prompt: 'Generá 3 preguntas de práctica sobre esta lección, de dificultad creciente. No me des las respuestas todavía: al final ofrecé corregirme si te respondo.',
+    },
+    /* Quiz de práctica, distinto de los checkpoints del curso. El prompt dice
+       explícitamente que ESTE quiz lo inventa el tutor y sí lo puede corregir:
+       sin esa aclaración, la regla 3 del system prompt ("nunca des la
+       respuesta de un quiz") hace que el modelo se niegue a corregir el suyo
+       propio. */
+    /* El formato es estricto a propósito: el front lo parsea para mostrar las
+       opciones como botones (ver lib/tutor-quiz.ts). Si el modelo se sale del
+       formato no se rompe nada — se muestra el texto tal cual —, pero cuanto
+       más predecible, más seguido se ve la versión linda.
+
+       Una pregunta por vez, no las cuatro juntas: cuatro preguntas con sus
+       dieciséis opciones es un muro de texto que nadie lee. */
+    QUIZ: {
+        label: 'Tomame un quiz rápido',
+        prompt:
+            'Tomame un quiz de 4 preguntas de opción múltiple sobre ESTA lección.\n\n' +
+            'REGLA MÁS IMPORTANTE: mandá UNA SOLA PREGUNTA en este mensaje. No escribas la pregunta 2, ni la 3, ni la 4. ' +
+            'Las vas a ir mandando de a una a medida que yo conteste. Si mandás más de una pregunta en el mismo mensaje, la respuesta es incorrecta.\n\n' +
+            'Formato EXACTO de este mensaje (una línea breve de presentación es opcional y va ANTES de la pregunta):\n\n' +
+            'Pregunta 1 de 4\n' +
+            '¿Texto de la pregunta?\n' +
+            'a) primera opción\n' +
+            'b) segunda opción\n' +
+            'c) tercera opción\n' +
+            'd) cuarta opción\n\n' +
+            'Después de la opción d) el mensaje TERMINA. Nada de "respondé con tus opciones", ni ejemplos de respuesta, ni la opción correcta, ni la pregunta siguiente.\n\n' +
+            'Cuando yo conteste, decime en una o dos líneas si acerté y por qué, y a continuación mandá la pregunta siguiente con el mismo formato ' +
+            '("Pregunta 2 de 4", y así). Después de la cuarta, cerrá con el puntaje final.\n\n' +
+            'Este quiz lo estás inventando vos para que yo practique: NO es un checkpoint ni un examen del curso, así que sí podés corregirme y explicarme las respuestas.',
     },
     EXPLAIN_AGAIN: {
         label: 'Explicámelo de otra forma',
