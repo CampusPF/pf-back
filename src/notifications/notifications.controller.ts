@@ -1,4 +1,4 @@
-import { Controller, Get, Header, HttpCode, Post, Query } from '@nestjs/common';
+import { Controller, DefaultValuePipe, Get, Header, HttpCode, Param, ParseBoolPipe, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -9,6 +9,8 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { RemindersService, RemindersRunResult } from './reminders.service';
 import { UnsubscribeTokenService } from './unsubscribe-token.service';
 import { frontendBaseUrl } from '../mail/mail-templates';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { NotificationsService } from './notifications.service';
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -17,6 +19,7 @@ export class NotificationsController {
         private readonly reminders: RemindersService,
         private readonly unsubscribeTokens: UnsubscribeTokenService,
         private readonly config: ConfigService,
+        private readonly inApp: NotificationsService,
         @InjectRepository(User)
         private readonly usersRepository: Repository<User>,
     ) { }
@@ -52,5 +55,44 @@ export class NotificationsController {
     @ApiOperation({ summary: 'Correr los recordatorios semanales ahora (admin)' })
     runReminders(): Promise<RemindersRunResult> {
         return this.reminders.runAll();
+    }
+
+    /* Campanita (in-app). Todo cuelga de /notifications/me: el dueño sale del
+       JWT, nunca de la URL. */
+
+    @Get('me')
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Mis notificaciones in-app (paginadas, de la más nueva)' })
+    listMine(
+        @CurrentUser('id') userId: string,
+        @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+        @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+        @Query('unread', new DefaultValuePipe(false), ParseBoolPipe) unread: boolean,
+    ) {
+        return this.inApp.listMine(userId, Math.max(1, page), Math.min(50, Math.max(1, limit)), unread);
+    }
+
+    @Get('me/unread-count')
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Cantidad de notificaciones no leídas' })
+    unreadCount(@CurrentUser('id') userId: string) {
+        return this.inApp.unreadCount(userId);
+    }
+
+    @Patch('me/read-all')
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Marcar todas mis notificaciones como leídas' })
+    markAllRead(@CurrentUser('id') userId: string) {
+        return this.inApp.markAllRead(userId);
+    }
+
+    @Patch(':id/read')
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Marcar una notificación como leída' })
+    markRead(
+        @CurrentUser('id') userId: string,
+        @Param('id', ParseUUIDPipe) id: string,
+    ) {
+        return this.inApp.markRead(userId, id);
     }
 }

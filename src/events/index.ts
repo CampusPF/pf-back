@@ -8,6 +8,9 @@ export * from './payment-succeeded.event';
 export * from './course-renamed.event';
 export * from './course-blocked-by-admin.event';
 export * from './role-changed.event';
+export * from './forum-thread-created.event';
+export * from './forum-reply-created.event';
+export * from './forum-solution-marked.event';
 
 /**
  * Los nombres de evento, en un solo lugar.
@@ -27,4 +30,7 @@ export const EVENTS = {
   COURSE_RENAMED: 'course.renamed',
   COURSE_BLOCKED_BY_ADMIN: 'course.blocked-by-admin',
   ROLE_CHANGED: 'user.role-changed',
+  FORUM_THREAD_CREATED: 'forum.thread-created',
+  FORUM_REPLY_CREATED: 'forum.reply-created',
+  FORUM_SOLUTION_MARKED: 'forum.solution-marked',
 } as const;
