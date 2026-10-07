@@ -14,6 +14,8 @@ import { CoursePushRemindersService } from './course-push-reminders.service';
     ],
     controllers: [PushController],
     providers: [PushService, CoursePushRemindersService],
-    exports: [PushService],
+    // CoursePushRemindersService se exporta para que TasksModule pueda
+    // dispararlo desde un cron externo (ver src/tasks/).
+    exports: [PushService, CoursePushRemindersService],
 })
 export class PushModule { }

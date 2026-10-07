@@ -59,6 +59,13 @@ export const envValidationSchema = Joi.object({
   VAPID_PRIVATE_KEY: requiredInProd(Joi.string()),
   VAPID_SUBJECT: requiredInProd(Joi.string().uri()).default('mailto:ohverde@gmail.com'),
 
+  /* --- Cron externo (POST /tasks/...) ---
+     Opcional: sin esta variable los endpoints de tareas responden 404 y sólo
+     corren los crons internos. No tiene default a propósito — un secreto por
+     defecto sería lo mismo que no tener ninguno. 32+ caracteres porque es la
+     única credencial que protege esos disparadores. */
+  CRON_SECRET: Joi.string().min(32).optional(),
+
   // Secret de los tokens de "recuperar contraseña". TIENE que ser distinto de
   // JWT_SECRET: así un token de reseteo filtrado no sirve como sesión ni al
   // revés. Mismas exigencias que JWT_SECRET (32+ chars en producción).
