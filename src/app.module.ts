@@ -31,6 +31,7 @@ import { FileUploadModule } from './file-upload/file-upload.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ChatModule } from './chat/chat.module';
 import { PushModule } from './push/push.module';
+import { TasksModule } from './tasks/tasks.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
 import { CourseProgressionModule } from './course-progression/course-progression.module';
@@ -123,6 +124,9 @@ import { ForumsModule } from './forums/forums.module';
     NotificationsModule,
     ChatModule,
     PushModule,
+    // Disparadores de las tareas programadas para un cron externo: el cron
+    // interno no corre si el servicio está dormido (plan free de Render).
+    TasksModule,
     QuizzesModule,
     // Progresión secuencial: qué módulo/checkpoint tiene abierto cada alumno.
     CourseProgressionModule,

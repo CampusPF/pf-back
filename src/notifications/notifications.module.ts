@@ -48,6 +48,8 @@ import { NotificationsService } from './notifications.service';
         NotificationsService,
     ],
     // Campanita: otros módulos (foros, etc.) avisan al usuario con esto.
-    exports: [NotificationsService],
+    // RemindersService se exporta para que TasksModule pueda dispararlo desde
+    // un cron externo (ver src/tasks/).
+    exports: [NotificationsService, RemindersService],
 })
 export class NotificationsModule { }
