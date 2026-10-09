@@ -66,12 +66,14 @@ export class ForumsController {
   // ---------- Foro general ----------
 
   @Get('forum/categories/:categoryId/threads')
-  @ApiOperation({ summary: 'Hilos de una categoría del foro general' })
+  @ApiOperation({ summary: 'Hilos de una categoría del foro general (con suscripción o algún curso comprado)' })
+  @ApiResponse({ status: 403, description: 'Sin suscripción activa ni cursos comprados' })
   listCategoryThreads(
+    @CurrentUser() user: AccessActor,
     @Param('categoryId', ParseUUIDPipe) categoryId: string,
     @Query() query: ListForumQuery,
   ) {
-    return this.forums.listCategoryThreads(categoryId, query.page ?? 1, query.limit ?? FORUM_PAGE_SIZE);
+    return this.forums.listCategoryThreads(user, categoryId, query.page ?? 1, query.limit ?? FORUM_PAGE_SIZE);
   }
 
   @Post('forum/categories/:categoryId/threads')

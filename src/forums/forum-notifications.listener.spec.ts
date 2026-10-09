@@ -1,7 +1,12 @@
 import { ForumNotificationsListener } from './forum-notifications.listener';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../push/push.service';
-import { ForumReplyCreatedEvent, ForumSolutionMarkedEvent, ForumThreadCreatedEvent } from '../events';
+import {
+  ForumPostUpdatedEvent,
+  ForumReplyCreatedEvent,
+  ForumSolutionMarkedEvent,
+  ForumThreadCreatedEvent,
+} from '../events';
 
 describe('ForumNotificationsListener', () => {
   function makeListener() {
@@ -17,16 +22,25 @@ describe('ForumNotificationsListener', () => {
   it('avisa al docente cuando un alumno abre un hilo', async () => {
     const { listener, notifications, push } = makeListener();
     await listener.onThreadCreated(
-      new ForumThreadCreatedEvent('t1', 'Duda', 'c1', 'Curso Node', 'teacher-1', 'student-1'),
+      new ForumThreadCreatedEvent('t1', 'Duda', 'c1', 'Curso Node', ['teacher-1'], 'student-1'),
     );
     expect(notifications.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'teacher-1', type: 'forum_thread' }));
     expect(push.sendToUser).toHaveBeenCalledWith('teacher-1', expect.objectContaining({ url: '/dashboard/foros/hilo/t1' }));
   });
 
+  it('también avisa a los compañeros inscriptos, no sólo al docente', async () => {
+    const { listener, notifications } = makeListener();
+    await listener.onThreadCreated(
+      new ForumThreadCreatedEvent('t1', 'Duda', 'c1', 'Curso Node', ['teacher-1', 'student-2', 'student-1'], 'student-1'),
+    );
+    const notified = notifications.create.mock.calls.map(([input]) => input.userId as string).sort();
+    expect(notified).toEqual(['student-2', 'teacher-1']);
+  });
+
   it('no avisa al docente si él mismo abrió el hilo', async () => {
     const { listener, notifications } = makeListener();
     await listener.onThreadCreated(
-      new ForumThreadCreatedEvent('t1', 'Aviso', 'c1', 'Curso Node', 'teacher-1', 'teacher-1'),
+      new ForumThreadCreatedEvent('t1', 'Aviso', 'c1', 'Curso Node', ['teacher-1'], 'teacher-1'),
     );
     expect(notifications.create).not.toHaveBeenCalled();
   });
@@ -35,6 +49,15 @@ describe('ForumNotificationsListener', () => {
     const { listener, notifications } = makeListener();
     await listener.onReplyCreated(
       new ForumReplyCreatedEvent('t1', 'Duda', 'p9', 'student-2', ['student-1', 'student-2', 'teacher-1', 'student-1']),
+    );
+    const notified = notifications.create.mock.calls.map(([input]) => input.userId as string).sort();
+    expect(notified).toEqual(['student-1', 'teacher-1']);
+  });
+
+  it('en una edición avisa a los participantes menos a quien editó, sin duplicados', async () => {
+    const { listener, notifications } = makeListener();
+    await listener.onPostUpdated(
+      new ForumPostUpdatedEvent('t1', 'Duda', 'p9', 'student-2', ['student-1', 'student-2', 'teacher-1', 'student-1']),
     );
     const notified = notifications.create.mock.calls.map(([input]) => input.userId as string).sort();
     expect(notified).toEqual(['student-1', 'teacher-1']);
@@ -54,7 +77,7 @@ describe('ForumNotificationsListener', () => {
     const { listener, notifications, push } = makeListener();
     push.sendToUser.mockRejectedValueOnce(new Error('push caído'));
     await expect(
-      listener.onThreadCreated(new ForumThreadCreatedEvent('t1', 'Duda', 'c1', 'Curso', 'teacher-1', 'student-1')),
+      listener.onThreadCreated(new ForumThreadCreatedEvent('t1', 'Duda', 'c1', 'Curso', ['teacher-1'], 'student-1')),
     ).resolves.toBeUndefined();
     expect(notifications.create).toHaveBeenCalled();
   });

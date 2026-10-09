@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { EVENTS, ForumReplyCreatedEvent, ForumSolutionMarkedEvent, ForumThreadCreatedEvent } from '../events';
+import {
+  EVENTS,
+  ForumPostUpdatedEvent,
+  ForumReplyCreatedEvent,
+  ForumSolutionMarkedEvent,
+  ForumThreadCreatedEvent,
+} from '../events';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../push/push.service';
 
@@ -27,18 +33,26 @@ export class ForumNotificationsListener {
     private readonly push: PushService,
   ) { }
 
-  /** Hilo nuevo en un curso: avisa al docente que lo dicta. */
+  /**
+   * Hilo nuevo: en uno de curso, avisa al docente y a todos los inscriptos;
+   * en uno del foro general, a todo el staff (admin + docentes). Siempre
+   * menos a quien lo abrió.
+   */
   @OnEvent(EVENTS.FORUM_THREAD_CREATED, { async: true })
   async onThreadCreated(event: ForumThreadCreatedEvent): Promise<void> {
-    if (!event.instructorId || event.instructorId === event.actorId) return;
-    await this.send({
-      userId: event.instructorId,
-      type: 'forum_thread',
-      title: `Nuevo hilo en ${event.courseTitle}`,
-      message: `Abrieron un hilo: "${event.threadTitle}"`,
-      link: threadLink(event.threadId),
-      tag: `forum-${event.threadId}`,
-    });
+    const recipients = [...new Set(event.recipientIds)].filter((id) => id !== event.actorId);
+    await Promise.all(
+      recipients.map((userId) =>
+        this.send({
+          userId,
+          type: 'forum_thread',
+          title: `Nuevo hilo en ${event.courseTitle}`,
+          message: `Abrieron un hilo: "${event.threadTitle}"`,
+          link: threadLink(event.threadId),
+          tag: `forum-${event.threadId}`,
+        }),
+      ),
+    );
   }
 
   /** Respuesta nueva: avisa a todos los que ya participaban, menos a quien responde. */
@@ -52,6 +66,24 @@ export class ForumNotificationsListener {
           type: 'forum_reply',
           title: 'Nueva respuesta en el foro',
           message: `Hay una respuesta en "${event.threadTitle}"`,
+          link: threadLink(event.threadId),
+          tag: `forum-${event.threadId}`,
+        }),
+      ),
+    );
+  }
+
+  /** Respuesta editada: mismos destinatarios que una respuesta nueva, menos quien editó. */
+  @OnEvent(EVENTS.FORUM_POST_UPDATED, { async: true })
+  async onPostUpdated(event: ForumPostUpdatedEvent): Promise<void> {
+    const recipients = [...new Set(event.recipientIds)].filter((id) => id !== event.actorId);
+    await Promise.all(
+      recipients.map((userId) =>
+        this.send({
+          userId,
+          type: 'forum_reply',
+          title: 'Editaron una respuesta en el foro',
+          message: `Hay una edición en "${event.threadTitle}"`,
           link: threadLink(event.threadId),
           tag: `forum-${event.threadId}`,
         }),

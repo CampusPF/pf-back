@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ModerationProvider, ModerationVerdict } from './moderation.types';
+import { ModerationPolicy, ModerationProvider, ModerationVerdict } from './moderation.types';
 import { REVIEW_MODERATION_POLICY } from './review-policy';
+import { FORUM_MODERATION_POLICY } from './forum-policy';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+const POLICY_PROMPTS: Record<ModerationPolicy, string> = {
+  review: REVIEW_MODERATION_POLICY,
+  forum: FORUM_MODERATION_POLICY,
+};
 
 /**
  * Moderación con `openai/gpt-oss-safeguard-20b` en Groq: un modelo que
@@ -28,7 +34,7 @@ export class GroqModerationProvider implements ModerationProvider {
     return !!this.apiKey;
   }
 
-  async check(text: string, signal?: AbortSignal): Promise<ModerationVerdict> {
+  async check(text: string, policy: ModerationPolicy, signal?: AbortSignal): Promise<ModerationVerdict> {
     const response = await fetch(GROQ_URL, {
       method: 'POST',
       signal,
@@ -48,7 +54,7 @@ export class GroqModerationProvider implements ModerationProvider {
         max_tokens: 1024,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: REVIEW_MODERATION_POLICY },
+          { role: 'system', content: POLICY_PROMPTS[policy] },
           { role: 'user', content: text },
         ],
       }),

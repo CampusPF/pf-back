@@ -10,8 +10,9 @@ import { ForumThread } from './entities/forum-thread.entity';
 import { ForumPost } from './entities/forum-post.entity';
 import { ForumCategory } from './entities/forum-category.entity';
 import { Course } from '../courses/entities/course.entity';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { ForumAccessService } from './forum-access.service';
+import { CourseEnrollmentsService } from '../course-enrollments/course-enrollments.service';
 import { ModerationService } from '../moderation/moderation.service';
 import { AccessActor } from '../lessons/lessons-access.service';
 import {
@@ -24,8 +25,10 @@ import { ModerateForumThreadDto } from './dto/forum-moderation.dto';
 import { FORUM_PAGE_SIZE } from './forum.constants';
 import {
     EVENTS,
+    ForumPostUpdatedEvent,
     ForumReplyCreatedEvent,
     ForumSolutionMarkedEvent,
+    ForumThreadChangedEvent,
     ForumThreadCreatedEvent,
 } from '../events';
 
@@ -102,7 +105,10 @@ export class ForumsService {
         private readonly categoriesRepository: Repository<ForumCategory>,
         @InjectRepository(Course)
         private readonly coursesRepository: Repository<Course>,
+        @InjectRepository(User)
+        private readonly usersRepository: Repository<User>,
         private readonly access: ForumAccessService,
+        private readonly enrollments: CourseEnrollmentsService,
         private readonly moderation: ModerationService,
         private readonly events: EventEmitter2,
         private readonly dataSource: DataSource,
@@ -120,7 +126,7 @@ export class ForumsService {
         const course = await this.getActiveCourse(courseId);
         await this.assertCanUseCourse(user, course);
 
-        await this.moderation.assertPublishable(`${dto.title}\n${dto.body}`);
+        await this.moderation.assertPublishable(`${dto.title}\n${dto.body}`, 'forum');
 
         const now = new Date();
         const saved = await this.threadsRepository.save(
@@ -133,6 +139,11 @@ export class ForumsService {
             }),
         );
 
+        // Avisa al docente y a todos los compañeros inscriptos, no sólo a
+        // quien dicta el curso: cualquiera que lo esté cursando se entera.
+        const studentIds = await this.enrollments.findActiveStudentIds(courseId);
+        const recipientIds = [...new Set([...studentIds, course.instructor?.id].filter((id): id is string => !!id))];
+
         this.events.emit(
             EVENTS.FORUM_THREAD_CREATED,
             new ForumThreadCreatedEvent(
@@ -140,7 +151,7 @@ export class ForumsService {
                 saved.title,
                 course.id,
                 course.title,
-                course.instructor?.id ?? null,
+                recipientIds,
                 user.id,
             ),
         );
@@ -157,15 +168,17 @@ export class ForumsService {
         });
     }
 
-    async listCategoryThreads(categoryId: string, page = 1, limit = FORUM_PAGE_SIZE) {
+    async listCategoryThreads(user: AccessActor, categoryId: string, page = 1, limit = FORUM_PAGE_SIZE) {
         await this.getActiveCategory(categoryId);
+        await this.assertCanUseGeneralForum(user);
         return this.paginateThreads({ categoryId }, page, limit);
     }
 
     async createCategoryThread(user: AccessActor, categoryId: string, dto: CreateForumThreadDto): Promise<ForumThreadView> {
-        await this.getActiveCategory(categoryId);
+        const category = await this.getActiveCategory(categoryId);
+        await this.assertCanUseGeneralForum(user);
 
-        await this.moderation.assertPublishable(`${dto.title}\n${dto.body}`);
+        await this.moderation.assertPublishable(`${dto.title}\n${dto.body}`, 'forum');
 
         const saved = await this.threadsRepository.save(
             this.threadsRepository.create({
@@ -176,10 +189,33 @@ export class ForumsService {
                 lastActivityAt: new Date(),
             }),
         );
+
+        // El foro general no tiene un docente dueño: se avisa a todo el
+        // staff (admin + docentes) en vez de a una sola persona.
+        const staffIds = await this.getStaffRecipientIds();
+        this.events.emit(
+            EVENTS.FORUM_THREAD_CREATED,
+            new ForumThreadCreatedEvent(saved.id, saved.title, categoryId, category.name, staffIds, user.id),
+        );
+
         return toThreadView(await this.loadThread(saved.id));
     }
 
     // ---------- Hilo ----------
+
+    /**
+     * ¿Puede leer este hilo? La usa ForumGateway antes de dejar unir un
+     * socket a la room del hilo (mismo chequeo que getThread, sin armar la
+     * vista completa). `false` también para un threadId que no existe.
+     */
+    async canReadThread(user: AccessActor, threadId: string): Promise<boolean> {
+        try {
+            const thread = await this.loadThread(threadId);
+            return await this.access.canRead(user, thread);
+        } catch {
+            return false;
+        }
+    }
 
     async getThread(user: AccessActor, threadId: string): Promise<ForumThreadDetail> {
         const thread = await this.loadThread(threadId);
@@ -206,10 +242,11 @@ export class ForumsService {
         const title = dto.title?.trim() ?? thread.title;
         const body = dto.body?.trim() ?? thread.body;
         if (dto.title !== undefined || dto.body !== undefined) {
-            await this.moderation.assertPublishable(`${title}\n${body}`);
+            await this.moderation.assertPublishable(`${title}\n${body}`, 'forum');
         }
 
         await this.threadsRepository.update(threadId, { title, body });
+        this.emitThreadChanged(threadId);
         return toThreadView(await this.loadThread(threadId));
     }
 
@@ -224,16 +261,24 @@ export class ForumsService {
         await this.threadsRepository.softDelete(threadId);
     }
 
-    /** Fijar y cerrar: sólo moderadores (admin o docente dueño del curso). */
+    /**
+     * Fijar y cerrar: sólo moderadores (admin o docente dueño del curso).
+     * Cerrar es definitivo: una vez cerrado, ni el moderador puede reabrirlo
+     * (evita que un hilo "resuelto" vuelva a juntar respuestas tardías).
+     */
     async moderateThread(user: AccessActor, threadId: string, dto: ModerateForumThreadDto): Promise<ForumThreadView> {
         const thread = await this.loadThread(threadId);
         if (!this.access.canModerate(user, thread)) {
             throw new ForbiddenException('Solo el docente del curso o un administrador puede moderar este hilo.');
         }
+        if (thread.isLocked && dto.isLocked === false) {
+            throw new ForbiddenException('Este hilo ya está cerrado y no se puede reabrir.');
+        }
         const changes: Partial<Pick<ForumThread, 'isPinned' | 'isLocked'>> = {};
         if (dto.isPinned !== undefined) changes.isPinned = dto.isPinned;
         if (dto.isLocked !== undefined) changes.isLocked = dto.isLocked;
         if (Object.keys(changes).length) await this.threadsRepository.update(threadId, changes);
+        this.emitThreadChanged(threadId);
         return toThreadView(await this.loadThread(threadId));
     }
 
@@ -257,6 +302,7 @@ export class ForumsService {
                 new ForumSolutionMarkedEvent(thread.id, thread.title, postId, post.authorId, user.id),
             );
         }
+        this.emitThreadChanged(threadId);
         return toThreadView(await this.loadThread(threadId));
     }
 
@@ -268,6 +314,7 @@ export class ForumsService {
             throw new ForbiddenException('Solo el autor del hilo o un moderador puede quitar la solución.');
         }
         await this.threadsRepository.update(threadId, { solutionPostId: null });
+        this.emitThreadChanged(threadId);
         return toThreadView(await this.loadThread(threadId));
     }
 
@@ -298,15 +345,21 @@ export class ForumsService {
             throw new ForbiddenException('El hilo está cerrado y ya no admite respuestas.');
         }
 
-        await this.moderation.assertPublishable(dto.body);
+        await this.moderation.assertPublishable(dto.body, 'forum');
 
-        // Quienes ya participaban (autor del hilo y respondedores previos) son
-        // los destinatarios del aviso. Se calcula antes de insertar la nueva.
+        // Destinatarios: quienes ya participaban (autor del hilo y
+        // respondedores previos) MÁS el staff del hilo (docente del curso, o
+        // todo admin/docente si es del foro general), aunque nunca haya
+        // escrito en este hilo puntual. Se calcula antes de insertar la
+        // nueva respuesta.
         const previous = await this.postsRepository.find({
             where: { threadId },
             select: { authorId: true },
         });
-        const recipientIds = [...new Set([thread.authorId, ...previous.map((p) => p.authorId)])];
+        const staffIds = await this.getThreadStaffRecipientIds(thread);
+        const recipientIds = [
+            ...new Set([thread.authorId, ...previous.map((p) => p.authorId), ...staffIds]),
+        ];
 
         const saved = await this.dataSource.transaction(async (manager) => {
             const postRepo = manager.getRepository(ForumPost);
@@ -324,6 +377,7 @@ export class ForumsService {
             EVENTS.FORUM_REPLY_CREATED,
             new ForumReplyCreatedEvent(thread.id, thread.title, saved.id, user.id, recipientIds),
         );
+        this.emitThreadChanged(threadId);
 
         const reloaded = await this.postsRepository.findOneOrFail({
             where: { id: saved.id },
@@ -344,9 +398,26 @@ export class ForumsService {
             throw new ForbiddenException('El hilo está cerrado: no se pueden editar sus respuestas.');
         }
 
-        await this.moderation.assertPublishable(dto.body);
+        await this.moderation.assertPublishable(dto.body, 'forum');
 
         await this.postsRepository.update(postId, { body: dto.body.trim(), editedAt: new Date() });
+
+        // Mismos destinatarios que una respuesta nueva: autor del hilo, todos
+        // los que ya participaron y el staff del hilo, salvo quien edita.
+        const previous = await this.postsRepository.find({
+            where: { threadId: thread.id },
+            select: { authorId: true },
+        });
+        const staffIds = await this.getThreadStaffRecipientIds(thread);
+        const recipientIds = [
+            ...new Set([thread.authorId, ...previous.map((p) => p.authorId), ...staffIds]),
+        ];
+        this.events.emit(
+            EVENTS.FORUM_POST_UPDATED,
+            new ForumPostUpdatedEvent(thread.id, thread.title, postId, user.id, recipientIds),
+        );
+        this.emitThreadChanged(thread.id);
+
         return toPostView(await this.loadPost(postId), thread);
     }
 
@@ -369,6 +440,7 @@ export class ForumsService {
                 replyCount: () => 'GREATEST("reply_count" - 1, 0)',
             });
         });
+        this.emitThreadChanged(thread.id);
     }
 
     // ---------- Mis foros ----------
@@ -400,6 +472,36 @@ export class ForumsService {
     }
 
     // ---------- Helpers ----------
+
+    /** Avisa por WebSocket (ForumGateway) a quien tenga este hilo abierto que refresque. */
+    private emitThreadChanged(threadId: string): void {
+        this.events.emit(EVENTS.FORUM_THREAD_CHANGED, new ForumThreadChangedEvent(threadId));
+    }
+
+    /** Ids de todo el staff (admin + docentes) activo. Destinatarios de "hilo nuevo" en el foro general. */
+    private async getStaffRecipientIds(): Promise<string[]> {
+        const staff = await this.usersRepository.find({
+            where: [
+                { role: UserRole.ADMIN, status: UserStatus.ACTIVE },
+                { role: UserRole.TEACHER, status: UserStatus.ACTIVE },
+            ],
+            select: { id: true },
+        });
+        return staff.map((u) => u.id);
+    }
+
+    /**
+     * Quién se entera de una respuesta/edición AUNQUE no haya participado
+     * antes de este hilo puntual: en uno de curso, el docente dueño; en uno
+     * del foro general (sin curso), todo el staff — ahí no hay un único
+     * "dueño" a quien avisar, y es el canal que admin/docentes moderan.
+     */
+    private async getThreadStaffRecipientIds(thread: ForumThread): Promise<string[]> {
+        if (thread.courseId) {
+            return thread.course?.instructor?.id ? [thread.course.instructor.id] : [];
+        }
+        return this.getStaffRecipientIds();
+    }
 
     private async paginateThreads(where: FindOptionsWhere<ForumThread>, page: number, limit: number): Promise<ForumPage<ForumThreadView>> {
         const [threads, total] = await this.threadsRepository.findAndCount({
@@ -433,6 +535,14 @@ export class ForumsService {
         }
     }
 
+    private async assertCanUseGeneralForum(user: AccessActor): Promise<void> {
+        if (!(await this.access.canUseGeneralForum(user))) {
+            throw new ForbiddenException(
+                'Necesitás una suscripción activa o haber comprado un curso para participar del foro general.',
+            );
+        }
+    }
+
     private async assertCanRead(user: AccessActor, thread: ForumThread): Promise<void> {
         if (!(await this.access.canRead(user, thread))) {
             throw new ForbiddenException('No tenés acceso a este foro.');
@@ -460,7 +570,9 @@ export class ForumsService {
     private async loadPost(postId: string): Promise<ForumPost & { thread: ForumThread }> {
         const post = await this.postsRepository.findOne({
             where: { id: postId },
-            relations: { thread: THREAD_RELATIONS as FindOptionsRelations<ForumThread> },
+            // `author` también hace falta: toPostView() lo lee para armar el
+            // autor de la respuesta (updatePost lo pasa tal cual a toPostView).
+            relations: { author: true, thread: THREAD_RELATIONS as FindOptionsRelations<ForumThread> },
         });
         if (!post?.thread) throw new NotFoundException('Respuesta no encontrada.');
         return post as ForumPost & { thread: ForumThread };

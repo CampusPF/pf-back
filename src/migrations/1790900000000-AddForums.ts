@@ -23,9 +23,9 @@ export class AddForums1790900000000 implements MigrationInterface {
 
         // Categorías iniciales del foro general.
         await queryRunner.query(`INSERT INTO "forum_categories" ("name", "slug", "description", "position") VALUES
-            ('General', 'general', 'Charlas generales de la comunidad.', 0),
+            ('Presentate', 'general', 'Contanos de vos', 0),
             ('Presentaciones', 'presentaciones', 'Presentate: quién sos y qué estás estudiando.', 1),
-            ('Ayuda técnica', 'ayuda-tecnica', 'Problemas con la plataforma, el video o la cuenta.', 2),
+            ('Ayuda técnica', 'ayuda-tecnica', 'Problemas con la plataforma, algún video que no cargue o algo con tu cuenta.', 2),
             ('Off-topic', 'off-topic', 'Todo lo que no encaja en otro lado.', 3)`);
     }
 
