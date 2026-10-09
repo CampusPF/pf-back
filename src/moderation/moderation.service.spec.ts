@@ -25,7 +25,12 @@ describe('ModerationService', () => {
 
   it('publica un comentario limpio que la IA aprueba', async () => {
     await expect(service.assertPublishable('Muy buen curso')).resolves.toBeUndefined();
-    expect(check).toHaveBeenCalledWith('Muy buen curso', expect.any(AbortSignal));
+    expect(check).toHaveBeenCalledWith('Muy buen curso', 'review', expect.any(AbortSignal));
+  });
+
+  it('usa la política "forum" cuando se la pasan explícitamente', async () => {
+    await expect(service.assertPublishable('te recomiendo este link', 'forum')).resolves.toBeUndefined();
+    expect(check).toHaveBeenCalledWith('te recomiendo este link', 'forum', expect.any(AbortSignal));
   });
 
   it('bloquea con la lista local sin llegar a la IA', async () => {

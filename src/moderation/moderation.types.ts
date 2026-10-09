@@ -7,6 +7,13 @@ export interface ModerationVerdict {
 }
 
 /**
+ * Qué política aplicar: 'review' (reseñas de cursos, donde un link es spam)
+ * o 'forum' (hilos/respuestas, donde compartir un link es ayuda). Ver
+ * review-policy.ts y forum-policy.ts.
+ */
+export type ModerationPolicy = 'review' | 'forum';
+
+/**
  * Proveedor de moderación con IA (la segunda capa; la primera es la lista
  * local de `profanity-filter.ts`). El servicio sólo conoce este contrato:
  * cambiar de proveedor es registrar otra clase en ModerationModule.
@@ -26,7 +33,7 @@ export interface ModerationProvider {
    * Tira error si el proveedor no responde o responde algo inválido: decidir
    * qué hacer en ese caso es del servicio, no del proveedor.
    */
-  check(text: string, signal?: AbortSignal): Promise<ModerationVerdict>;
+  check(text: string, policy: ModerationPolicy, signal?: AbortSignal): Promise<ModerationVerdict>;
 }
 
 export const MODERATION_PROVIDER = 'MODERATION_PROVIDER';

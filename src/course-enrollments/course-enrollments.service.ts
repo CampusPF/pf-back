@@ -148,10 +148,36 @@ export class CourseEnrollmentsService {
       .execute();
   }
 
+  /**
+   * Ids de todos los alumnos con inscripción ACTIVA a este curso. La usa el
+   * aviso de "hilo nuevo" del foro: antes sólo se notificaba al docente,
+   * dejando afuera a cualquier compañero inscripto.
+   */
+  async findActiveStudentIds(courseId: string): Promise<string[]> {
+    const rows = await this.enrollmentsRepository.find({
+      where: { course: { id: courseId }, isActive: true },
+      select: { student: { id: true } },
+      relations: { student: true },
+    });
+    return rows.map((row) => row.student.id);
+  }
+
   /** ¿El alumno tiene una inscripción ACTIVA a este curso? */
   async hasActiveEnrollment(studentId: string, courseId: string): Promise<boolean> {
     const count = await this.enrollmentsRepository.count({
       where: { student: { id: studentId }, course: { id: courseId }, isActive: true },
+    });
+    return count > 0;
+  }
+
+  /**
+   * ¿El alumno tiene AL MENOS UNA inscripción ACTIVA, a cualquier curso?
+   * La usa el foro general: haber comprado/cursado algo en la plataforma es
+   * la condición, sin importar cuál.
+   */
+  async hasAnyActiveEnrollment(studentId: string): Promise<boolean> {
+    const count = await this.enrollmentsRepository.count({
+      where: { student: { id: studentId }, isActive: true },
     });
     return count > 0;
   }

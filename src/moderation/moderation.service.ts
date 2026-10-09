@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { findBlockedTerm } from './profanity-filter';
 import { MODERATION_PROVIDER } from './moderation.types';
-import type { ModerationProvider, ModerationVerdict } from './moderation.types';
+import type { ModerationPolicy, ModerationProvider, ModerationVerdict } from './moderation.types';
 
 /** Más que esto y el alumno siente que la app se colgó. */
 const MODERATION_TIMEOUT_MS = 6000;
@@ -50,15 +50,19 @@ export class ModerationService implements OnModuleInit {
     }
   }
 
-  /** Lanza 422 si el texto no se puede publicar. */
-  async assertPublishable(text: string): Promise<void> {
+  /**
+   * Lanza 422 si el texto no se puede publicar. `policy` por defecto es
+   * 'review' (reseñas de cursos); el foro pasa explícitamente 'forum', que
+   * no trata un link como spam (ver forum-policy.ts).
+   */
+  async assertPublishable(text: string, policy: ModerationPolicy = 'review'): Promise<void> {
     const blockedTerm = findBlockedTerm(text);
     if (blockedTerm) {
       this.logger.log(`Comentario rechazado por la lista local ("${blockedTerm}")`);
       throw new UnprocessableEntityException(REJECTED_COMMENT_MESSAGE);
     }
 
-    const verdict = await this.checkWithAi(text);
+    const verdict = await this.checkWithAi(text, policy);
     if (verdict && !verdict.allowed) {
       this.logger.log(`Comentario rechazado por la IA (${verdict.category}): ${verdict.rationale}`);
       throw new UnprocessableEntityException(REJECTED_COMMENT_MESSAGE);
@@ -66,11 +70,11 @@ export class ModerationService implements OnModuleInit {
   }
 
   /** `null` = la IA no está configurada o no respondió: no hay veredicto. */
-  private async checkWithAi(text: string): Promise<ModerationVerdict | null> {
+  private async checkWithAi(text: string, policy: ModerationPolicy): Promise<ModerationVerdict | null> {
     if (!this.provider.isConfigured()) return null;
 
     try {
-      return await this.provider.check(text, AbortSignal.timeout(MODERATION_TIMEOUT_MS));
+      return await this.provider.check(text, policy, AbortSignal.timeout(MODERATION_TIMEOUT_MS));
     } catch (error) {
       this.logger.warn(
         `Moderación con IA no disponible; se publica tras pasar la lista local: ${

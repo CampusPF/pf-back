@@ -19,10 +19,19 @@ function generalThread(): ForumThread {
 }
 
 describe('ForumAccessService', () => {
-  function makeService(allowed = true) {
+  function makeService(
+    allowed = true,
+    general: { hasActiveSubscription?: boolean; hasAnyActiveEnrollment?: boolean } = {},
+  ) {
     const canAccessCourseContent = jest.fn(async () => allowed);
-    const service = new ForumAccessService({ canAccessCourseContent } as unknown as LessonsAccessService);
-    return { service, canAccessCourseContent };
+    const hasActiveSubscription = jest.fn(async () => general.hasActiveSubscription ?? false);
+    const hasAnyActiveEnrollment = jest.fn(async () => general.hasAnyActiveEnrollment ?? false);
+    const service = new ForumAccessService(
+      { canAccessCourseContent } as unknown as LessonsAccessService,
+      { hasAnyActiveEnrollment } as any,
+      { hasActiveSubscription } as any,
+    );
+    return { service, canAccessCourseContent, hasActiveSubscription, hasAnyActiveEnrollment };
   }
 
   describe('canRead / canUseCourseForum', () => {
@@ -45,10 +54,26 @@ describe('ForumAccessService', () => {
       expect(canAccessCourseContent).not.toHaveBeenCalled();
     });
 
-    it('el foro general es legible por cualquier usuario autenticado', async () => {
+    it('el foro general no es legible por un alumno sin suscripción ni cursos comprados', async () => {
       const { service, canAccessCourseContent } = makeService(false);
-      expect(await service.canRead({ id: 'anyone' }, generalThread())).toBe(true);
+      expect(await service.canRead({ id: 'nobody', role: UserRole.STUDENT }, generalThread())).toBe(false);
       expect(canAccessCourseContent).not.toHaveBeenCalled();
+    });
+
+    it('el foro general es legible por un alumno con suscripción activa', async () => {
+      const { service } = makeService(false, { hasActiveSubscription: true });
+      expect(await service.canRead({ id: 'subscriber', role: UserRole.STUDENT }, generalThread())).toBe(true);
+    });
+
+    it('el foro general es legible por un alumno con algún curso comprado', async () => {
+      const { service } = makeService(false, { hasAnyActiveEnrollment: true });
+      expect(await service.canRead({ id: 'buyer', role: UserRole.STUDENT }, generalThread())).toBe(true);
+    });
+
+    it('el foro general siempre es legible por el admin y el docente', async () => {
+      const { service } = makeService(false);
+      expect(await service.canRead({ id: 'admin-1', role: UserRole.ADMIN }, generalThread())).toBe(true);
+      expect(await service.canRead({ id: 'teacher-1', role: UserRole.TEACHER }, generalThread())).toBe(true);
     });
   });
 

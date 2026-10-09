@@ -11,6 +11,8 @@ export * from './role-changed.event';
 export * from './forum-thread-created.event';
 export * from './forum-reply-created.event';
 export * from './forum-solution-marked.event';
+export * from './forum-post-updated.event';
+export * from './forum-thread-changed.event';
 
 /**
  * Los nombres de evento, en un solo lugar.
@@ -33,4 +35,6 @@ export const EVENTS = {
   FORUM_THREAD_CREATED: 'forum.thread-created',
   FORUM_REPLY_CREATED: 'forum.reply-created',
   FORUM_SOLUTION_MARKED: 'forum.solution-marked',
+  FORUM_POST_UPDATED: 'forum.post-updated',
+  FORUM_THREAD_CHANGED: 'forum.thread-changed',
 } as const;
