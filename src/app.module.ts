@@ -40,6 +40,7 @@ import { GamificationModule } from './gamification/gamification.module';
 import { AdminStatsModule } from './admin-stats/admin-stats.module';
 import { SpeechModule } from './speech/speech.module';
 import { ForumsModule } from './forums/forums.module';
+import { GolondrinaModule } from './golondrina/golondrina.module';
 
 
 
@@ -112,6 +113,7 @@ import { ForumsModule } from './forums/forums.module';
     CourseEnrollmentsModule,
     CourseReviewsModule,
     ForumsModule,
+    GolondrinaModule,
     LessonProgressModule,
     UserActivityModule,
     ProgressTrackingModule,

@@ -127,6 +127,16 @@ export class PushService implements OnModuleInit {
         return removed;
     }
 
+    /**
+     * ¿Le llegaría un push a este usuario? Hay VAPID y tiene al menos un
+     * navegador suscripto. Golondrina lo usa para no prometer un aviso al
+     * celular que no va a salir (y mandarlo a la campanita en su lugar).
+     */
+    async canReach(userId: string): Promise<boolean> {
+        if (!this.configured) return false;
+        return (await this.subscriptionsRepository.count({ where: { userId } })) > 0;
+    }
+
     async sendToUser(userId: string, payload: PushPayload): Promise<void> {
         /* Antes era un `return` mudo: sin VAPID no se mandaba nada y no
            quedaba rastro en los logs, así que desde afuera era idéntico a
