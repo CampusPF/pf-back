@@ -196,6 +196,8 @@ export const envValidationSchema = Joi.object({
   COURSE_PUSH_CRON: Joi.string().default('0 19 */3 * *'),
 COURSE_PUSH_TZ: Joi.string().default('America/Argentina/Buenos_Aires'),
 COURSE_PUSH_MIN_INTERVAL_DAYS: Joi.number().integer().positive().default(3),
+  // Cada cuánto busca Golondrina avisos pendientes (cron interno, en UTC).
+  GOLONDRINA_CRON: Joi.string().default('*/5 * * * *'),
 })
   // Permite variables extra en el entorno (PATH, HOME, las que inyecta el
   // hosting, etc.) sin hacer fallar el arranque.

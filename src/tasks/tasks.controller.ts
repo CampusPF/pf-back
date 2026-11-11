@@ -5,6 +5,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { CronSecretGuard } from './cron-secret.guard';
 import { CoursePushRemindersService } from '../push/course-push-reminders.service';
 import { RemindersService } from '../notifications/reminders.service';
+import { GolondrinaService } from '../golondrina/golondrina.service';
 
 /**
  * Disparadores de las tareas programadas, para un cron EXTERNO.
@@ -35,6 +36,7 @@ export class TasksController {
     constructor(
         private readonly coursePushReminders: CoursePushRemindersService,
         private readonly reminders: RemindersService,
+        private readonly golondrina: GolondrinaService,
     ) { }
 
     /** Recordatorios push de cursos inactivos. Pensado para una vez por día. */
@@ -51,6 +53,19 @@ export class TasksController {
     async runWeeklyReminders() {
         this.logger.log('Cron externo: recordatorios semanales por mail');
         return this.reminders.runAll();
+    }
+
+    /**
+     * Avisos de Golondrina que ya tocaban (recordatorios y bloques del plan).
+     * Pensado para cada 5 a 15 minutos. Idempotente: cada aviso se reclama
+     * antes de mandarse, así que correr esto y el cron interno a la vez no
+     * duplica nada.
+     */
+    @Post('golondrina')
+    @HttpCode(HttpStatus.OK)
+    async runGolondrina() {
+        this.logger.log('Cron externo: avisos de Golondrina');
+        return this.golondrina.runDue();
     }
 
     /**

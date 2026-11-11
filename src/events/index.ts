@@ -13,6 +13,7 @@ export * from './forum-reply-created.event';
 export * from './forum-solution-marked.event';
 export * from './forum-post-updated.event';
 export * from './forum-thread-changed.event';
+export * from './chat-message-sent.event';
 
 /**
  * Los nombres de evento, en un solo lugar.
@@ -37,4 +38,5 @@ export const EVENTS = {
   FORUM_SOLUTION_MARKED: 'forum.solution-marked',
   FORUM_POST_UPDATED: 'forum.post-updated',
   FORUM_THREAD_CHANGED: 'forum.thread-changed',
+  CHAT_MESSAGE_SENT: 'chat.message-sent',
 } as const;
