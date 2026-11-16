@@ -50,6 +50,8 @@ import { NotificationsService } from './notifications.service';
     // Campanita: otros módulos (foros, etc.) avisan al usuario con esto.
     // RemindersService se exporta para que TasksModule pueda dispararlo desde
     // un cron externo (ver src/tasks/).
-    exports: [NotificationsService, RemindersService],
+    // EmailNotificationsService: Golondrina manda sus avisos por mail con el
+    // mismo registro anti-duplicados que el resto (ver src/golondrina/).
+    exports: [NotificationsService, RemindersService, EmailNotificationsService],
 })
 export class NotificationsModule { }

@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { CourseEnrollment } from '../course-enrollments/entities/course-enrollment.entity';
@@ -6,6 +7,7 @@ import { Course } from '../courses/entities/course.entity';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { Message } from './entities/message.entity';
 import { ChatContactDto } from './dto/chat-contact.dto';
+import { ChatMessageSentEvent, EVENTS } from '../events';
 
 interface ContactAccumulator {
     contact: User;
@@ -21,13 +23,17 @@ export class ChatService {
         private readonly usersRepository: Repository<User>,
         @InjectRepository(CourseEnrollment)
         private readonly enrollmentsRepository: Repository<CourseEnrollment>,
+        private readonly events: EventEmitter2,
     ) { }
 
     async sendMessage(senderId: string, receiverId: string, content: string): Promise<Message> {
         await this.assertCanChat(senderId, receiverId);
 
         const message = this.messagesRepository.create({ senderId, receiverId, content });
-        return this.messagesRepository.save(message);
+        const saved = await this.messagesRepository.save(message);
+        // Golondrina avisa «te respondió el docente» (ver GolondrinaListener).
+        this.events.emit(EVENTS.CHAT_MESSAGE_SENT, new ChatMessageSentEvent(saved.id, senderId, receiverId));
+        return saved;
     }
 
     async getConversation(userId: string, otherUserId: string): Promise<Message[]> {

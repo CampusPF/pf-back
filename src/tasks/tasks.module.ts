@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PushModule } from '../push/push.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { GolondrinaModule } from '../golondrina/golondrina.module';
 import { TasksController } from './tasks.controller';
 import { CronSecretGuard } from './cron-secret.guard';
 
@@ -8,7 +9,7 @@ import { CronSecretGuard } from './cron-secret.guard';
    No agrega lógica propia: reusa los mismos services que usan los crons
    internos (ver el comentario de TasksController). */
 @Module({
-    imports: [PushModule, NotificationsModule],
+    imports: [PushModule, NotificationsModule, GolondrinaModule],
     controllers: [TasksController],
     providers: [CronSecretGuard],
 })

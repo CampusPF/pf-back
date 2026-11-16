@@ -30,4 +30,8 @@ export const SAMPLES: Record<MailTemplate, Record<string, unknown>> = {
     [MailTemplate.TEACHER_REMINDER]: { name: 'Luis', daysSinceLastCourse: 30, hasCourses: true, createCourseUrl: 'https://campus.test/nuevo', unsubscribeUrl: 'https://api.test/unsubscribe?token=t' },
     [MailTemplate.COURSE_BLOCKED_BY_ADMIN]: { name: 'Luis', courseTitle: 'Python desde cero', coursesUrl: 'https://campus.test/mis-cursos' },
     [MailTemplate.ROLE_CHANGED]: { name: 'Ana', previousRole: 'estudiante', newRole: 'docente', dashboardUrl: 'https://campus.test/dashboard',},
+    [MailTemplate.GOLONDRINA]: {
+        name: 'Ana', title: 'Resumen de «Variables»', message: 'acá van los puntos clave de la lección.',
+        items: ['let y const', 'Tipos primitivos'], ctaLabel: 'Abrir la lección', ctaUrl: 'https://campus.test/courses/js/learn/1',
+    },
 };
